@@ -1,0 +1,11 @@
+{
+  "title": "E-APP Iluminação",
+  "description": "Control your home lighting effortlessly with customizable sliders for various lamp types, enhancing ambiance and convenience in your living space.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
