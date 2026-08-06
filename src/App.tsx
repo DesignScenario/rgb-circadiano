@@ -14,6 +14,8 @@ const GOTA_PATH =
   'M21.5 0C33.3741 0 42.9999 9.55853 43 21.3496C43 27.6311 40.2671 33.2779 35.9189 37.1846L23.5947 49.1982C22.4297 50.3337 20.5723 50.3336 19.4072 49.1982L7.08008 37.1846C2.73222 33.2779 0 27.6308 0 21.3496C0.000108996 9.55853 9.62595 0 21.5 0Z'
 
 const M = 'Montserrat, sans-serif'
+// Duration of the Home ↔ main-screen "Move In" slide transition
+const MAIN_TRANSITION_MS = 320
 const clamp = (v: number, lo: number, hi: number) =>
   Math.min(Math.max(v, lo), hi)
 
@@ -421,7 +423,7 @@ function StatusBar() {
 
 // ─── Nav Bar ──────────────────────────────────────────────────────────────────
 
-function NavBar() {
+function NavBar({ onHomeClick }: { onHomeClick?: () => void }) {
   return (
     <div style={{ height: 72, flexShrink: 0 }}>
       <div
@@ -434,6 +436,7 @@ function NavBar() {
         }}
       >
         <div
+          onClick={onHomeClick}
           style={{
             flex: '1 0 0',
             height: 54,
@@ -442,6 +445,7 @@ function NavBar() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            cursor: onHomeClick ? 'pointer' : 'default',
           }}
         >
           <svg
@@ -780,6 +784,9 @@ function GearIcon({ onClick }: { onClick?: () => void }) {
 export default function App() {
   const [screen, setScreen] =
     useState<'main' | 'rgb-advanced' | 'rgb2-advanced' | 'cct-advanced'>('main')
+  // Home is the app's landing screen; the lighting main screen slides in over it
+  const [mainMounted, setMainMounted] = useState(false)
+  const [mainSlideIn, setMainSlideIn] = useState(false)
   const [centralDim, setCentralDim] = useState(100)
   const [fitaBrightness, setFitaBrightness] = useState(100)
   const [fitaHue, setFitaHue] = useState(0)
@@ -824,10 +831,6 @@ export default function App() {
   const rgbColor = fitaHue === 0 ? 'rgb(255,255,255)' : pickedColor
   const cctColor = cctToColor(cctTemp)
 
-  // Tooltip fill
-  const rgbTooltipFill = fitaHue === 0 ? 'rgba(200,200,200,0.9)' : rgbColor
-  const cctTooltipFill = cctColor
-
   // Fita LED 2 — derived colors (canonical slider-space hue, mirrors fitaHue/pickedColor above)
   const pickedColor2 = hslToBlendedColor(
     sliderToHslHue(fitaHue2),
@@ -864,6 +867,31 @@ export default function App() {
     } else {
       setFitaHue(hslHueToSlider(hue))
     }
+  }
+
+  // Opens the lighting main screen, sliding it in over Home ("Move In")
+  const openMainExperience = () => {
+    setScreen('main')
+    setMainMounted(true)
+  }
+
+  // Double rAF so the frame paints off-screen once before the transition kicks in
+  useEffect(() => {
+    if (!mainMounted) return
+    let raf2 = 0
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setMainSlideIn(true))
+    })
+    return () => {
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
+    }
+  }, [mainMounted])
+
+  // Slides the main screen back out, then unmounts it once the transition ends
+  const closeMainExperience = () => {
+    setMainSlideIn(false)
+    window.setTimeout(() => setMainMounted(false), MAIN_TRANSITION_MS)
   }
 
   if (screen === 'rgb-advanced') {
@@ -915,6 +943,266 @@ export default function App() {
     )
   }
 
+  // Fita LED simple-mode hue slider — mirrors handleWheelColorChange's sync duty
+  const handleFitaHueChange = (v: number) => {
+    setFitaHue(v)
+    if (v > 0) setFitaSat(1)
+    setWheelPos(deriveWheelPos(v, v > 0 ? fitaSat : 1))
+  }
+
+  // Fita LED 2 simple-mode hue slider — mirrors handleRingHueChange2's sync duty
+  const handleFitaHue2Change = (v: number) => {
+    setFitaHue2(v)
+    if (v > 0) setFitaSat2(1)
+    setRingAngle2(sliderToHslHue(v))
+  }
+
+  return (
+    <>
+      <HomeScreen onOpenAdvanced={openMainExperience} />
+      {mainMounted && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            transform: mainSlideIn ? 'translateX(0)' : 'translateX(100%)',
+            transition: `transform ${MAIN_TRANSITION_MS}ms cubic-bezier(0.32,0.72,0,1)`,
+            zIndex: 30,
+          }}
+        >
+          <MainScreen
+            onGoHome={closeMainExperience}
+            onOpenRgbAdvanced={() => setScreen('rgb-advanced')}
+            onOpenRgb2Advanced={() => setScreen('rgb2-advanced')}
+            onOpenCctAdvanced={() => setScreen('cct-advanced')}
+            centralDim={centralDim}
+            onCentralDimChange={setCentralDim}
+            fitaBrightness={fitaBrightness}
+            onFitaBrightnessChange={setFitaBrightness}
+            fitaHue={fitaHue}
+            onFitaHueChange={handleFitaHueChange}
+            pickedColor={pickedColor}
+            rgbColor={rgbColor}
+            fitaBrightness2={fitaBrightness2}
+            onFitaBrightness2Change={setFitaBrightness2}
+            fitaHue2={fitaHue2}
+            onFitaHue2Change={handleFitaHue2Change}
+            pickedColor2={pickedColor2}
+            rgbColor2={rgbColor2}
+            bancadaOn={bancadaOn}
+            onBancadaChange={setBancadaOn}
+            cctIntensity={cctIntensity}
+            onCctIntensityChange={setCctIntensity}
+            cctTemp={cctTemp}
+            onCctTempChange={setCctTemp}
+            circAuto={circAuto}
+            cctColor={cctColor}
+          />
+        </div>
+      )}
+    </>
+  )
+}
+
+// ─── Home Screen (prototype landing screen) ───────────────────────────────────
+
+function HomeScreen({
+  onOpenAdvanced,
+  onOpenSecondary,
+}: {
+  onOpenAdvanced: () => void
+  onOpenSecondary?: () => void
+}) {
+  return (
+    <div
+      style={{
+        background: '#000',
+        width: '100%',
+        height: '100vh',
+        position: 'relative',
+        overflow: 'hidden',
+        fontFamily: M,
+        maxWidth: 393,
+        margin: '0 auto',
+      }}
+    >
+      {/* ── Descriptive tag ─────────────────────────────────────────────────── */}
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 64,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+        }}
+      >
+        <div style={{ width: 76, height: 11, background: 'white' }} />
+        <span
+          style={{
+            fontFamily: M,
+            fontWeight: 600,
+            fontSize: 16,
+            color: 'white',
+            lineHeight: 'normal',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          PROTÓTIPO
+        </span>
+      </div>
+
+      {/* ── Title ────────────────────────────────────────────────────────────── */}
+      <span
+        style={{
+          position: 'absolute',
+          left: 31,
+          top: 133,
+          transform: 'translateY(-50%)',
+          fontFamily: M,
+          fontWeight: 600,
+          fontSize: 26,
+          color: 'white',
+          lineHeight: 'normal',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        RGB - Circadiano
+      </span>
+
+      {/* ── Buttons ──────────────────────────────────────────────────────────── */}
+      <div
+        style={{
+          position: 'absolute',
+          left: 31,
+          right: 31,
+          top: 197,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 32,
+        }}
+      >
+        <button
+          onClick={onOpenAdvanced}
+          style={{
+            height: 50,
+            border: '1px solid white',
+            borderRadius: 4,
+            background: 'transparent',
+            padding: '0 12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontFamily: M,
+            fontWeight: 600,
+            fontSize: 16,
+            color: 'white',
+            textAlign: 'center',
+            cursor: 'pointer',
+          }}
+        >
+          #1 - Ajuste no modo avançado
+        </button>
+        <button
+          onClick={onOpenSecondary}
+          style={{
+            height: 50,
+            border: '1px solid white',
+            borderRadius: 4,
+            background: 'transparent',
+            padding: '0 12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontFamily: M,
+            fontWeight: 600,
+            fontSize: 16,
+            color: 'white',
+            textAlign: 'center',
+            cursor: onOpenSecondary ? 'pointer' : 'default',
+          }}
+        >
+          #2 - Ajuste na tela principal
+        </button>
+      </div>
+
+      {/* ── Home indicator ───────────────────────────────────────────────────── */}
+      <div
+        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 34 }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 8,
+            left: '33.33%',
+            right: '33.33%',
+            height: 5,
+            borderRadius: 2.5,
+            background: 'white',
+          }}
+        />
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Screen (lighting panel) ─────────────────────────────────────────────
+
+function MainScreen({
+  onGoHome,
+  onOpenRgbAdvanced,
+  onOpenRgb2Advanced,
+  onOpenCctAdvanced,
+  centralDim,
+  onCentralDimChange,
+  fitaBrightness,
+  onFitaBrightnessChange,
+  fitaHue,
+  onFitaHueChange,
+  pickedColor,
+  rgbColor,
+  fitaBrightness2,
+  onFitaBrightness2Change,
+  fitaHue2,
+  onFitaHue2Change,
+  pickedColor2,
+  rgbColor2,
+  bancadaOn,
+  onBancadaChange,
+  cctIntensity,
+  onCctIntensityChange,
+  cctTemp,
+  onCctTempChange,
+  circAuto,
+  cctColor,
+}: {
+  onGoHome: () => void
+  onOpenRgbAdvanced: () => void
+  onOpenRgb2Advanced: () => void
+  onOpenCctAdvanced: () => void
+  centralDim: number
+  onCentralDimChange: (v: number) => void
+  fitaBrightness: number
+  onFitaBrightnessChange: (v: number) => void
+  fitaHue: number
+  onFitaHueChange: (v: number) => void
+  pickedColor: string
+  rgbColor: string
+  fitaBrightness2: number
+  onFitaBrightness2Change: (v: number) => void
+  fitaHue2: number
+  onFitaHue2Change: (v: number) => void
+  pickedColor2: string
+  rgbColor2: string
+  bancadaOn: boolean
+  onBancadaChange: (v: boolean) => void
+  cctIntensity: number
+  onCctIntensityChange: (v: number) => void
+  cctTemp: number
+  onCctTempChange: (v: number) => void
+  circAuto: boolean
+  cctColor: string
+}) {
   return (
     <div
       style={{
@@ -1102,7 +1390,7 @@ export default function App() {
               <LumHeader name="Central" />
               <Slider
                 value={centralDim}
-                onChange={setCentralDim}
+                onChange={onCentralDimChange}
                 thumbColor="#FFCC33"
                 tooltipFill="rgba(112,112,112,0.85)"
               />
@@ -1112,7 +1400,7 @@ export default function App() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <LumHeader
                 name="Fita LED"
-                extra={<GearIcon onClick={() => setScreen('rgb-advanced')} />}
+                extra={<GearIcon onClick={onOpenRgbAdvanced} />}
               />
               <div
                 style={{ display: 'flex', flexDirection: 'column', gap: 24 }}
@@ -1120,7 +1408,7 @@ export default function App() {
                 {/* Brightness */}
                 <Slider
                   value={fitaBrightness}
-                  onChange={setFitaBrightness}
+                  onChange={onFitaBrightnessChange}
                   trackFill={
                     <div
                       style={{
@@ -1151,11 +1439,7 @@ export default function App() {
                 {/* Chromatic (RGB) */}
                 <Slider
                   value={fitaHue}
-                  onChange={(v) => {
-                    setFitaHue(v)
-                    if (v > 0) setFitaSat(1)
-                    setWheelPos(deriveWheelPos(v, v > 0 ? fitaSat : 1))
-                  }}
+                  onChange={onFitaHueChange}
                   trackBg="transparent"
                   trackFill={
                     <>
@@ -1205,7 +1489,7 @@ export default function App() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <LumHeader
                 name="Fita LED 2"
-                extra={<GearIcon onClick={() => setScreen('rgb2-advanced')} />}
+                extra={<GearIcon onClick={onOpenRgb2Advanced} />}
               />
               <div
                 style={{ display: 'flex', flexDirection: 'column', gap: 24 }}
@@ -1213,7 +1497,7 @@ export default function App() {
                 {/* Brightness */}
                 <Slider
                   value={fitaBrightness2}
-                  onChange={setFitaBrightness2}
+                  onChange={onFitaBrightness2Change}
                   trackFill={
                     <div
                       style={{
@@ -1244,11 +1528,7 @@ export default function App() {
                 {/* Chromatic (RGB) */}
                 <Slider
                   value={fitaHue2}
-                  onChange={(v) => {
-                    setFitaHue2(v)
-                    if (v > 0) setFitaSat2(1)
-                    setRingAngle2(sliderToHslHue(v))
-                  }}
+                  onChange={onFitaHue2Change}
                   trackBg="transparent"
                   trackFill={
                     <>
@@ -1298,7 +1578,7 @@ export default function App() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <LumHeader name="Bancada" />
               <button
-                onClick={() => setBancadaOn(!bancadaOn)}
+                onClick={() => onBancadaChange(!bancadaOn)}
                 style={{
                   width: '100%',
                   height: 23,
@@ -1344,7 +1624,7 @@ export default function App() {
                 name="LED CCT/Circadiano"
                 extra={
                   <button
-                    onClick={() => setScreen('cct-advanced')}
+                    onClick={onOpenCctAdvanced}
                     style={{
                       background: circAuto ? '#FFCC33' : 'transparent',
                       border: `1px solid ${circAuto ? '#FFCC33' : 'white'}`,
@@ -1380,7 +1660,7 @@ export default function App() {
                 {/* CCT Intensity */}
                 <Slider
                   value={cctIntensity}
-                  onChange={setCctIntensity}
+                  onChange={onCctIntensityChange}
                   trackFill={
                     <div
                       style={{
@@ -1412,7 +1692,7 @@ export default function App() {
                 <Slider
                   value={cctTemp}
                   onChange={(v) => {
-                    if (!circAuto) setCctTemp(v)
+                    if (!circAuto) onCctTempChange(v)
                   }}
                   disabled={circAuto}
                   trackH={3}
@@ -1444,7 +1724,7 @@ export default function App() {
                   }
                   thumbW={circAuto ? 45 : 13}
                   thumbH={circAuto ? 25 : 13}
-                  tooltipFill={cctTooltipFill}
+                  tooltipFill={cctColor}
                   tooltipContent={
                     <span
                       style={{
@@ -1478,7 +1758,7 @@ export default function App() {
         }}
       >
         <StatusBar />
-        <NavBar />
+        <NavBar onHomeClick={onGoHome} />
       </div>
 
       {/* ── Home indicator ────────────────────────────────────────────────────── */}
