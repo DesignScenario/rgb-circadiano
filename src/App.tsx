@@ -4,7 +4,6 @@ import imgVaranda from '@/imports/AppTelaAmbientesAmbientesAbertoIluminacaoContr
 import imgMatizes from '@/imports/AppTelaAmbientesAmbientesAbertoIluminacaoModoCircadiano/dad55023aed494b396988fa22a3673797d574fcb.png'
 import imgCctArc from '@/imports/AppTelaAmbientesAmbientesAbertoIluminacaoModoCircadiano-1/aa2d1113b1e32cf249aca3b9ce7c43c8ce970f30.png'
 import imgAnelCromatico from '@/imports/AppTelaAmbientesAmbientesAbertoIluminacaoRgbFitaLed2/84dbb79dfd0f6c297efd18b14c39107762f48e9e.png'
-import imgAnelSeletor from '@/imports/AppTelaAmbientesAmbientesAbertoIluminacaoRgbFitaLed2/10166cd4cc71b4a1b623c61a1334ed2623aa3480.svg'
 import AppBotaoMenuAmbienteAberto from '@/imports/AppBotaoMenuAmbienteAberto/index'
 import AppIconeAmbientesIluminacao70Px from '@/imports/AppIconeAmbientesIluminacao70Px/index'
 import AppIconeAmbientesControles70Px from '@/imports/AppIconeAmbientesControles70Px/index'
@@ -1905,12 +1904,17 @@ function RGBAdvancedScreen({
 // Fixed radius (px from ring center) where the hue handle sits, on the ring band
 const RING2_RADIUS = 102
 
+// Visible handle diameter (28px circle + 2px stroke), centered exactly on the ring point
+const RING2_HANDLE_SIZE = 30
+
 function RingHueHandle({
   angleDeg,
   onDrag,
+  color,
 }: {
   angleDeg: number
   onDrag: (deg: number) => void
+  color: string
 }) {
   const angleRad = ((angleDeg - 90) * Math.PI) / 180
   const x = 120 + RING2_RADIUS * Math.cos(angleRad)
@@ -1921,10 +1925,10 @@ function RingHueHandle({
     <div
       style={{
         position: 'absolute',
-        left: x - 21.4,
-        top: y - 21.4,
-        width: 42.8,
-        height: 42.8,
+        left: x - RING2_HANDLE_SIZE / 2,
+        top: y - RING2_HANDLE_SIZE / 2,
+        width: RING2_HANDLE_SIZE,
+        height: RING2_HANDLE_SIZE,
         touchAction: 'none',
         userSelect: 'none',
         cursor: 'grab',
@@ -1945,15 +1949,15 @@ function RingHueHandle({
         onDrag(deg)
       }}
     >
-      <img
-        src={imgAnelSeletor}
-        alt=""
-        draggable={false}
+      <div
         style={{
           position: 'absolute',
           inset: 0,
-          width: '100%',
-          height: '100%',
+          borderRadius: '50%',
+          background: color,
+          border: '2px solid white',
+          boxSizing: 'border-box',
+          boxShadow: '0 3.2px 3.2px rgba(0,0,0,0.5)',
           pointerEvents: 'none',
         }}
       />
@@ -1974,14 +1978,20 @@ function VerticalSatSlider({
 }) {
   const trackRef = useRef<HTMLDivElement>(null)
   const THUMB = 30
+  // Keeps the thumb's edge 3px shy of the track's top/bottom so it never touches the rounded ends
+  const END_MARGIN = 3
 
   const getVal = useCallback(
     (clientY: number) => {
       if (!trackRef.current) return value
       const r = trackRef.current.getBoundingClientRect()
-      const usable = r.height - THUMB
+      const usable = r.height - THUMB - END_MARGIN * 2
       return Math.round(
-        clamp(1 - (clientY - r.top - THUMB / 2) / usable, 0, 1) * 100,
+        clamp(
+          1 - (clientY - r.top - THUMB / 2 - END_MARGIN) / usable,
+          0,
+          1,
+        ) * 100,
       )
     },
     [value],
@@ -2013,7 +2023,7 @@ function VerticalSatSlider({
         style={{
           position: 'absolute',
           left: '50%',
-          top: `calc(${THUMB / 2}px + ${1 - value / 100} * (100% - ${THUMB}px))`,
+          top: `calc(${THUMB / 2 + END_MARGIN}px + ${1 - value / 100} * (100% - ${THUMB + END_MARGIN * 2}px))`,
           transform: 'translate(-50%, -50%)',
           width: THUMB,
           height: THUMB,
@@ -2141,7 +2151,11 @@ function RGB2AdvancedScreen({
                   pointerEvents: 'none',
                 }}
               />
-              <RingHueHandle angleDeg={ringAngle} onDrag={onRingAngleChange} />
+              <RingHueHandle
+                angleDeg={ringAngle}
+                onDrag={onRingAngleChange}
+                color={pickedColor}
+              />
             </div>
             <VerticalSatSlider
               value={Math.round(sat * 100)}
