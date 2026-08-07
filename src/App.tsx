@@ -1537,6 +1537,12 @@ function MainScreen({
   const pureHueColor3 = hslToBlendedColor(ringAngle3, 1)
   const ringColor3 = hslToBlendedColor(ringAngle3, fitaSat3)
 
+  // Expanded chromatic controls fade to 50% only when the strip is fully off (0) —
+  // any intensity above that is full opacity, not a gradual ramp
+  const fitaWheelOpacity = fitaBrightness === 0 ? 0.5 : 1
+  const fita2RingOpacity = fitaBrightness2 === 0 ? 0.5 : 1
+  const fita3RingOpacity = fitaBrightness3 === 0 ? 0.5 : 1
+
   // Drives the inline Fita LED color wheel (mirrors RGBAdvancedScreen's moveSelector)
   const wheelRef = useRef<HTMLDivElement>(null)
   const moveWheelSelector = (clientX: number, clientY: number) => {
@@ -1810,6 +1816,8 @@ function MainScreen({
                       cursor: 'crosshair',
                       touchAction: 'none',
                       userSelect: 'none',
+                      opacity: fitaWheelOpacity,
+                      transition: 'opacity 0.2s ease',
                     }}
                     onPointerDown={(e) => {
                       e.currentTarget.setPointerCapture(e.pointerId)
@@ -2007,6 +2015,8 @@ function MainScreen({
                         width: 240,
                         height: 240,
                         flexShrink: 0,
+                        opacity: fita2RingOpacity,
+                        transition: 'opacity 0.2s ease',
                       }}
                     >
                       <img
@@ -2034,6 +2044,7 @@ function MainScreen({
                       onChange={(v) => onFitaSat2Change(v / 100)}
                       topColor={pureHueColor2}
                       thumbColor={ringColor2}
+                      opacity={fita2RingOpacity}
                     />
                   </div>
                 ) : (
@@ -2129,6 +2140,8 @@ function MainScreen({
                         width: 200,
                         height: 200,
                         flexShrink: 0,
+                        opacity: fita3RingOpacity,
+                        transition: 'opacity 0.2s ease',
                       }}
                     >
                       <img
@@ -2162,6 +2175,7 @@ function MainScreen({
                       width={30}
                       height={200}
                       thumbSize={24}
+                      opacity={fita3RingOpacity}
                     />
                   </div>
                 ) : (
@@ -3968,6 +3982,7 @@ function VerticalSatSlider({
   height = 240,
   thumbSize = 30,
   showValue = false,
+  opacity = 1,
 }: {
   value: number
   onChange: (v: number) => void
@@ -3978,6 +3993,7 @@ function VerticalSatSlider({
   height?: number
   thumbSize?: number
   showValue?: boolean
+  opacity?: number
 }) {
   const trackRef = useRef<HTMLDivElement>(null)
   const [dragging, setDragging] = useState(false)
@@ -4013,6 +4029,8 @@ function VerticalSatSlider({
         background: `linear-gradient(to bottom, ${topColor} 0%, ${bottomColor} 100%)`,
         touchAction: 'none',
         userSelect: 'none',
+        opacity,
+        transition: 'opacity 0.2s ease',
       }}
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId)
