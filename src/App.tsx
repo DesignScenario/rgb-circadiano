@@ -931,6 +931,10 @@ export default function App() {
   const [fitaHue2, setFitaHue2] = useState(0)
   const [fitaSat2, setFitaSat2] = useState(1)
   const [ringAngle2, setRingAngle2] = useState(0)
+  const [fitaBrightness3, setFitaBrightness3] = useState(100)
+  const [fitaHue3, setFitaHue3] = useState(0)
+  const [fitaSat3, setFitaSat3] = useState(1)
+  const [ringAngle3, setRingAngle3] = useState(0)
   const [cctIntensity, setCctIntensity] = useState(100)
   const [cctTemp, setCctTemp] = useState(50)
   const [cctTempMin, setCctTempMin] = useState(0)
@@ -941,6 +945,7 @@ export default function App() {
   // independent per luminaire, so any combination can be open at once
   const [fitaExpanded, setFitaExpanded] = useState(false)
   const [fita2Expanded, setFita2Expanded] = useState(false)
+  const [fita3Expanded, setFita3Expanded] = useState(false)
   const [cctExpanded, setCctExpanded] = useState(false)
 
   // CCT auto animation: bounces between cctTempMin and cctTempMax
@@ -983,6 +988,19 @@ export default function App() {
   const handleRingHueChange2 = (angleDeg: number) => {
     setRingAngle2(angleDeg)
     setFitaHue2(hslHueToSlider(angleDeg))
+  }
+
+  // Fita LED 3 — derived colors (canonical slider-space hue, mirrors fitaHue/pickedColor above)
+  const pickedColor3 = hslToBlendedColor(
+    sliderToHslHue(fitaHue3),
+    fitaHue3 === 0 ? 0 : fitaSat3,
+  )
+  const rgbColor3 = fitaHue3 === 0 ? 'rgb(255,255,255)' : pickedColor3
+
+  // Called when the hue ring changes color — receives precise angle so the handle stays put
+  const handleRingHueChange3 = (angleDeg: number) => {
+    setRingAngle3(angleDeg)
+    setFitaHue3(hslHueToSlider(angleDeg))
   }
 
   // Wheel selector position — stored directly so drag avoids the hue round-trip
@@ -1145,6 +1163,13 @@ export default function App() {
     setRingAngle2(sliderToHslHue(v))
   }
 
+  // Fita LED 3 simple-mode hue slider — mirrors handleRingHueChange3's sync duty
+  const handleFitaHue3Change = (v: number) => {
+    setFitaHue3(v)
+    if (v > 0) setFitaSat3(1)
+    setRingAngle3(sliderToHslHue(v))
+  }
+
   return (
     <>
       <HomeScreen
@@ -1228,6 +1253,18 @@ export default function App() {
             onRingAngle2Change={handleRingHueChange2}
             fitaSat2={fitaSat2}
             onFitaSat2Change={setFitaSat2}
+            fitaBrightness3={fitaBrightness3}
+            onFitaBrightness3Change={setFitaBrightness3}
+            fitaHue3={fitaHue3}
+            onFitaHue3Change={handleFitaHue3Change}
+            pickedColor3={pickedColor3}
+            rgbColor3={rgbColor3}
+            fita3Expanded={fita3Expanded}
+            onFita3ExpandedChange={setFita3Expanded}
+            ringAngle3={ringAngle3}
+            onRingAngle3Change={handleRingHueChange3}
+            fitaSat3={fitaSat3}
+            onFitaSat3Change={setFitaSat3}
             bancadaOn={bancadaOn}
             onBancadaChange={setBancadaOn}
             cctIntensity={cctIntensity}
@@ -1416,6 +1453,18 @@ function MainScreen({
   onRingAngle2Change,
   fitaSat2,
   onFitaSat2Change,
+  fitaBrightness3,
+  onFitaBrightness3Change,
+  fitaHue3,
+  onFitaHue3Change,
+  pickedColor3,
+  rgbColor3,
+  fita3Expanded,
+  onFita3ExpandedChange,
+  ringAngle3,
+  onRingAngle3Change,
+  fitaSat3,
+  onFitaSat3Change,
   bancadaOn,
   onBancadaChange,
   cctIntensity,
@@ -1458,6 +1507,18 @@ function MainScreen({
   onRingAngle2Change: (deg: number) => void
   fitaSat2: number
   onFitaSat2Change: (v: number) => void
+  fitaBrightness3: number
+  onFitaBrightness3Change: (v: number) => void
+  fitaHue3: number
+  onFitaHue3Change: (v: number) => void
+  pickedColor3: string
+  rgbColor3: string
+  fita3Expanded: boolean
+  onFita3ExpandedChange: (v: boolean) => void
+  ringAngle3: number
+  onRingAngle3Change: (deg: number) => void
+  fitaSat3: number
+  onFitaSat3Change: (v: number) => void
   bancadaOn: boolean
   onBancadaChange: (v: boolean) => void
   cctIntensity: number
@@ -1473,6 +1534,8 @@ function MainScreen({
   // Ring handle / sat-slider thumb color — always the true angle+sat blend, unlike
   // pickedColor2 which forces white at fitaHue2 === 0 for the collapsed linear slider
   const ringColor2 = hslToBlendedColor(ringAngle2, fitaSat2)
+  const pureHueColor3 = hslToBlendedColor(ringAngle3, 1)
+  const ringColor3 = hslToBlendedColor(ringAngle3, fitaSat3)
 
   // Drives the inline Fita LED color wheel (mirrors RGBAdvancedScreen's moveSelector)
   const wheelRef = useRef<HTMLDivElement>(null)
@@ -1624,6 +1687,7 @@ function MainScreen({
                 centralDim > 0 ||
                 fitaBrightness > 0 ||
                 fitaBrightness2 > 0 ||
+                fitaBrightness3 > 0 ||
                 cctIntensity > 0 ||
                 bancadaOn
               }
@@ -2018,6 +2082,168 @@ function MainScreen({
                     }
                     tooltipContent={null}
                   />
+                )}
+              </div>
+            </div>
+
+            {/* ── Fita LED 3 ───────────────────────────────────────────────── */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <LumHeader
+                name="Fita LED 3"
+                extra={
+                  <ExpandToggleIcon
+                    open={fita3Expanded}
+                    onClick={() => onFita3ExpandedChange(!fita3Expanded)}
+                  />
+                }
+              />
+              <div
+                style={{ display: 'flex', flexDirection: 'column', gap: 24 }}
+              >
+                {fita3Expanded ? (
+                  /* Intensity slider (left) + hue ring (center) + saturation slider (right) —
+                     replaces the horizontal brightness bar while expanded */
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      width: '100%',
+                      padding: '0 12px',
+                    }}
+                  >
+                    <VerticalSatSlider
+                      value={fitaBrightness3}
+                      onChange={onFitaBrightness3Change}
+                      topColor="white"
+                      bottomColor="black"
+                      thumbColor="white"
+                      width={30}
+                      height={200}
+                      thumbSize={24}
+                      showValue
+                    />
+                    <div
+                      style={{
+                        position: 'relative',
+                        width: 200,
+                        height: 200,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <img
+                        src={imgAnelCromatico}
+                        alt=""
+                        draggable={false}
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          width: '100%',
+                          height: '100%',
+                          borderRadius: '50%',
+                          transform: 'rotate(-90deg)',
+                          pointerEvents: 'none',
+                        }}
+                      />
+                      <RingHueHandle
+                        angleDeg={ringAngle3}
+                        onDrag={onRingAngle3Change}
+                        color={ringColor3}
+                        center={100}
+                        radius={85}
+                        handleSize={24}
+                      />
+                    </div>
+                    <VerticalSatSlider
+                      value={Math.round(fitaSat3 * 100)}
+                      onChange={(v) => onFitaSat3Change(v / 100)}
+                      topColor={pureHueColor3}
+                      thumbColor={ringColor3}
+                      width={30}
+                      height={200}
+                      thumbSize={24}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    {/* Brightness */}
+                    <Slider
+                      value={fitaBrightness3}
+                      onChange={onFitaBrightness3Change}
+                      trackFill={
+                        <div
+                          style={{
+                            position: 'absolute',
+                            left: 0,
+                            top: 0,
+                            bottom: 0,
+                            width: `${fitaBrightness3}%`,
+                            background: pickedColor3,
+                            borderRadius: 1.5,
+                          }}
+                        />
+                      }
+                      thumbColor={pickedColor3}
+                      thumbContent={
+                        <div
+                          style={{
+                            width: 13,
+                            height: 13,
+                            borderRadius: '50%',
+                            background: 'white',
+                          }}
+                        />
+                      }
+                      tooltipFill="rgba(112,112,112,0.85)"
+                    />
+
+                    {/* Chromatic (RGB) */}
+                    <Slider
+                      value={fitaHue3}
+                      onChange={onFitaHue3Change}
+                      trackBg="transparent"
+                      trackFill={
+                        <>
+                          <div
+                            style={{
+                              position: 'absolute',
+                              inset: 0,
+                              backgroundImage:
+                                'linear-gradient(90deg, rgb(255,0,128) 8%, rgb(255,0,255) 17%, rgb(127,0,255) 25%, rgb(0,0,255) 33%, rgb(0,127,255) 42%, rgb(0,255,255) 50%, rgb(0,255,127) 58%, rgb(0,255,0) 67%, rgb(127,255,0) 75%, rgb(255,255,0) 83%, rgb(255,127,0) 92%, rgb(255,0,0) 100%)',
+                              borderRadius: 1.5,
+                            }}
+                          />
+                          {/* white overlay at start */}
+                          <div
+                            style={{
+                              position: 'absolute',
+                              left: 0,
+                              top: 0,
+                              bottom: 0,
+                              width: 13,
+                              background: 'white',
+                            }}
+                          />
+                        </>
+                      }
+                      thumbContent={
+                        <div
+                          style={{
+                            width: 13,
+                            height: 13,
+                            borderRadius: '50%',
+                            background: rgbColor3,
+                            border: '1.5px solid white',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      }
+                      tooltipFill={
+                        fitaHue3 === 0 ? 'rgba(200,200,200,0.9)' : pickedColor3
+                      }
+                      tooltipContent={null}
+                    />
+                  </>
                 )}
               </div>
             </div>
@@ -3672,24 +3898,30 @@ function RingHueHandle({
   angleDeg,
   onDrag,
   color,
+  center = 120,
+  radius = RING2_RADIUS,
+  handleSize = RING2_HANDLE_SIZE,
 }: {
   angleDeg: number
   onDrag: (deg: number) => void
   color: string
+  center?: number
+  radius?: number
+  handleSize?: number
 }) {
   const angleRad = ((angleDeg - 90) * Math.PI) / 180
-  const x = 120 + RING2_RADIUS * Math.cos(angleRad)
-  const y = 120 + RING2_RADIUS * Math.sin(angleRad)
+  const x = center + radius * Math.cos(angleRad)
+  const y = center + radius * Math.sin(angleRad)
   const containerRef = useRef<HTMLElement | null>(null)
 
   return (
     <div
       style={{
         position: 'absolute',
-        left: x - RING2_HANDLE_SIZE / 2,
-        top: y - RING2_HANDLE_SIZE / 2,
-        width: RING2_HANDLE_SIZE,
-        height: RING2_HANDLE_SIZE,
+        left: x - handleSize / 2,
+        top: y - handleSize / 2,
+        width: handleSize,
+        height: handleSize,
         touchAction: 'none',
         userSelect: 'none',
         cursor: 'grab',
@@ -3731,14 +3963,25 @@ function VerticalSatSlider({
   onChange,
   topColor,
   thumbColor,
+  bottomColor = 'white',
+  width = 36,
+  height = 240,
+  thumbSize = 30,
+  showValue = false,
 }: {
   value: number
   onChange: (v: number) => void
   topColor: string
   thumbColor: string
+  bottomColor?: string
+  width?: number
+  height?: number
+  thumbSize?: number
+  showValue?: boolean
 }) {
   const trackRef = useRef<HTMLDivElement>(null)
-  const THUMB = 30
+  const [dragging, setDragging] = useState(false)
+  const THUMB = thumbSize
   // Keeps the thumb's edge 3px shy of the track's top/bottom so it never touches the rounded ends
   const END_MARGIN = 3
 
@@ -3763,22 +4006,25 @@ function VerticalSatSlider({
       ref={trackRef}
       style={{
         position: 'relative',
-        width: 36,
-        height: 240,
-        borderRadius: 18,
+        width,
+        height,
+        borderRadius: width / 2,
         flexShrink: 0,
-        background: `linear-gradient(to bottom, ${topColor} 0%, white 100%)`,
+        background: `linear-gradient(to bottom, ${topColor} 0%, ${bottomColor} 100%)`,
         touchAction: 'none',
         userSelect: 'none',
       }}
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId)
+        setDragging(true)
         onChange(getVal(e.clientY))
       }}
       onPointerMove={(e) => {
         if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
         onChange(getVal(e.clientY))
       }}
+      onPointerUp={() => setDragging(false)}
+      onPointerCancel={() => setDragging(false)}
     >
       <div
         style={{
@@ -3795,7 +4041,24 @@ function VerticalSatSlider({
           boxShadow: '0 3px 3px rgba(0,0,0,0.35)',
           pointerEvents: 'none',
         }}
-      />
+      >
+        {showValue && (
+          <DropBalloon visible={dragging} fill="rgba(112,112,112,0.85)">
+            <span
+              style={{
+                fontFamily: M,
+                fontWeight: 600,
+                fontSize: 16,
+                color: 'white',
+                display: 'block',
+                lineHeight: 1,
+              }}
+            >
+              {value}
+            </span>
+          </DropBalloon>
+        )}
+      </div>
     </div>
   )
 }
