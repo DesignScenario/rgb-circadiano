@@ -114,6 +114,22 @@ function cctToColor(temp: number): string {
   return `rgb(${r},${g},${b})`
 }
 
+// Kelvin step applied by the circadian ring's manual up/down nudge buttons.
+// All circadian K values are snapped to this grid so displayed numbers are
+// always round (4600K, 4650K, ...), never arbitrary drag positions.
+const CCT_STEP_K = 50
+const CCT_MIN_K = 2700
+const CCT_MAX_K = 6500
+// Raw (unsnapped) 0-100 slider value → Kelvin, rounded to the nearest CCT_STEP_K
+const cctTempToK = (temp: number) =>
+  Math.round(
+    (CCT_MIN_K + (temp / 100) * (CCT_MAX_K - CCT_MIN_K)) / CCT_STEP_K,
+  ) * CCT_STEP_K
+const kToCctTemp = (k: number) =>
+  ((clamp(k, CCT_MIN_K, CCT_MAX_K) - CCT_MIN_K) / (CCT_MAX_K - CCT_MIN_K)) * 100
+// Snaps any raw 0-100 slider value to the one whose Kelvin value is round
+const snapCctTemp = (temp: number) => kToCctTemp(cctTempToK(temp))
+
 // ─── Teardrop Tooltip Balloon ─────────────────────────────────────────────────
 
 function DropBalloon({
@@ -749,7 +765,7 @@ function LumHeader({ name, extra }: { name: string; extra?: React.ReactNode }) {
   )
 }
 
-// ─── Gear icon ────────────────────────────────────────────────────────────────
+// ─── Gear icon (opens the classic full-screen advanced mode) ─────────────────
 
 function GearIcon({ onClick }: { onClick?: () => void }) {
   return (
@@ -777,16 +793,136 @@ function GearIcon({ onClick }: { onClick?: () => void }) {
   )
 }
 
+// ─── Inline expand/collapse chevron (replaces the gear icon in proposal #2) ───
+
+function ExpandToggleIcon({
+  open,
+  onClick,
+}: {
+  open: boolean
+  onClick?: () => void
+}) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        position: 'relative',
+        width: 22,
+        height: 22,
+        flexShrink: 0,
+        cursor: onClick ? 'pointer' : 'default',
+      }}
+    >
+      <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+        <path
+          d={open ? 'M5 13L11 7L17 13' : 'M5 9L11 15L17 9'}
+          stroke="white"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+        />
+      </svg>
+    </div>
+  )
+}
+
+// ─── Circadian ring step arrows (40px, center of the inline ring, manual mode) ─
+
+function CircadianStepArrow({
+  direction,
+  onClick,
+}: {
+  direction: 'up' | 'down'
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        width: 40,
+        height: 40,
+        flexShrink: 0,
+        background: 'none',
+        border: 'none',
+        padding: 0,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <svg width="16" height="8" viewBox="0 0 16 8" fill="none">
+        <path
+          d={direction === 'up' ? 'M1 7L8 1L15 7' : 'M1 1L8 7L15 1'}
+          stroke="white"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+        />
+      </svg>
+    </button>
+  )
+}
+
+// ─── Circadian automatic-mode ring icon (travels the arc over the 10s sweep) ──
+
+function CctAutoRingIcon({ color }: { color: string }) {
+  return (
+    <div
+      style={{
+        width: 36,
+        height: 36,
+        borderRadius: '50%',
+        background: '#000',
+        border: `3px solid ${color}`,
+        boxShadow: '0 4px 8px rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        pointerEvents: 'none',
+      }}
+    >
+      {/* Same wave/parábola vector as CCTThumb's collapsed-mode icon */}
+      <svg width="32" height="17.8" viewBox="0 0 45 25" fill="none">
+        <path d={WAVE_PATH} fill="url(#cct-wave-grad-ring)" stroke="black" />
+        <defs>
+          <linearGradient
+            id="cct-wave-grad-ring"
+            gradientUnits="userSpaceOnUse"
+            x1="8"
+            x2="37.4"
+            y1="12.43"
+            y2="12.43"
+          >
+            <stop stopColor="#FF8800" />
+            <stop offset="0.5" stopColor="#88BBFF" />
+            <stop offset="1" stopColor="#FF8800" />
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+  )
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [screen, setScreen] =
-    useState<'main' | 'rgb-advanced' | 'rgb2-advanced' | 'cct-advanced'>('main')
+  const [screen, setScreen] = useState<
+    | 'main'
+    | 'cct-advanced'
+    | 'main-classic'
+    | 'rgb-advanced-classic'
+    | 'rgb2-advanced-classic'
+    | 'cct-advanced-classic'
+  >('main')
   // Home is the app's landing screen; the lighting main screen slides in over it
   const [mainMounted, setMainMounted] = useState(false)
   const [mainSlideIn, setMainSlideIn] = useState(false)
+  // Same Move In slide, but for the classic (full-screen advanced mode) prototype
+  const [classicMounted, setClassicMounted] = useState(false)
+  const [classicSlideIn, setClassicSlideIn] = useState(false)
   const [centralDim, setCentralDim] = useState(100)
   const [fitaBrightness, setFitaBrightness] = useState(100)
   const [fitaHue, setFitaHue] = useState(0)
@@ -801,6 +937,11 @@ export default function App() {
   const [cctTempMax, setCctTempMax] = useState(100)
   const [bancadaOn, setBancadaOn] = useState(true)
   const [circAuto, setCircAuto] = useState(false)
+  // Inline expand/collapse state for the on-screen advanced controls (proposal #2) —
+  // independent per luminaire, so any combination can be open at once
+  const [fitaExpanded, setFitaExpanded] = useState(false)
+  const [fita2Expanded, setFita2Expanded] = useState(false)
+  const [cctExpanded, setCctExpanded] = useState(false)
 
   // CCT auto animation: bounces between cctTempMin and cctTempMax
   useEffect(() => {
@@ -894,10 +1035,35 @@ export default function App() {
     window.setTimeout(() => setMainMounted(false), MAIN_TRANSITION_MS)
   }
 
-  if (screen === 'rgb-advanced') {
+  // Opens the classic (full-screen advanced mode) lighting screen, sliding it in over Home
+  const openClassicExperience = () => {
+    setScreen('main-classic')
+    setClassicMounted(true)
+  }
+
+  // Double rAF so the frame paints off-screen once before the transition kicks in
+  useEffect(() => {
+    if (!classicMounted) return
+    let raf2 = 0
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setClassicSlideIn(true))
+    })
+    return () => {
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
+    }
+  }, [classicMounted])
+
+  // Slides the classic screen back out, then unmounts it once the transition ends
+  const closeClassicExperience = () => {
+    setClassicSlideIn(false)
+    window.setTimeout(() => setClassicMounted(false), MAIN_TRANSITION_MS)
+  }
+
+  if (screen === 'rgb-advanced-classic') {
     return (
-      <RGBAdvancedScreen
-        onBack={() => setScreen('main')}
+      <RGBAdvancedScreenClassic
+        onBack={() => setScreen('main-classic')}
         brightness={fitaBrightness}
         onBrightnessChange={setFitaBrightness}
         wheelPos={wheelPos}
@@ -907,16 +1073,38 @@ export default function App() {
     )
   }
 
-  if (screen === 'rgb2-advanced') {
+  if (screen === 'rgb2-advanced-classic') {
     return (
-      <RGB2AdvancedScreen
-        onBack={() => setScreen('main')}
+      <RGB2AdvancedScreenClassic
+        onBack={() => setScreen('main-classic')}
         brightness={fitaBrightness2}
         onBrightnessChange={setFitaBrightness2}
         ringAngle={ringAngle2}
         onRingAngleChange={handleRingHueChange2}
         sat={fitaSat2}
         onSatChange={setFitaSat2}
+      />
+    )
+  }
+
+  if (screen === 'cct-advanced-classic') {
+    return (
+      <CctAdvancedScreen
+        onBack={() => setScreen('main-classic')}
+        circAuto={circAuto}
+        onCircAutoChange={(v) => {
+          setCircAuto(v)
+          if (!v)
+            setCctTemp(Math.round(cctTempMin + (cctTempMax - cctTempMin) / 2))
+        }}
+        cctTemp={cctTemp}
+        onCctTempChange={setCctTemp}
+        cctTempMin={cctTempMin}
+        onCctTempMinChange={setCctTempMin}
+        cctTempMax={cctTempMax}
+        onCctTempMaxChange={setCctTempMax}
+        cctIntensity={cctIntensity}
+        onCctIntensityChange={setCctIntensity}
       />
     )
   }
@@ -959,22 +1147,25 @@ export default function App() {
 
   return (
     <>
-      <HomeScreen onOpenAdvanced={openMainExperience} />
-      {mainMounted && (
+      <HomeScreen
+        onOpenAdvanced={openClassicExperience}
+        onOpenSecondary={openMainExperience}
+      />
+      {classicMounted && (
         <div
           style={{
             position: 'fixed',
             inset: 0,
-            transform: mainSlideIn ? 'translateX(0)' : 'translateX(100%)',
+            transform: classicSlideIn ? 'translateX(0)' : 'translateX(100%)',
             transition: `transform ${MAIN_TRANSITION_MS}ms cubic-bezier(0.32,0.72,0,1)`,
             zIndex: 30,
           }}
         >
-          <MainScreen
-            onGoHome={closeMainExperience}
-            onOpenRgbAdvanced={() => setScreen('rgb-advanced')}
-            onOpenRgb2Advanced={() => setScreen('rgb2-advanced')}
-            onOpenCctAdvanced={() => setScreen('cct-advanced')}
+          <MainScreenClassic
+            onGoHome={closeClassicExperience}
+            onOpenRgbAdvanced={() => setScreen('rgb-advanced-classic')}
+            onOpenRgb2Advanced={() => setScreen('rgb2-advanced-classic')}
+            onOpenCctAdvanced={() => setScreen('cct-advanced-classic')}
             centralDim={centralDim}
             onCentralDimChange={setCentralDim}
             fitaBrightness={fitaBrightness}
@@ -997,6 +1188,56 @@ export default function App() {
             onCctTempChange={setCctTemp}
             circAuto={circAuto}
             cctColor={cctColor}
+          />
+        </div>
+      )}
+      {mainMounted && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            transform: mainSlideIn ? 'translateX(0)' : 'translateX(100%)',
+            transition: `transform ${MAIN_TRANSITION_MS}ms cubic-bezier(0.32,0.72,0,1)`,
+            zIndex: 30,
+          }}
+        >
+          <MainScreen
+            onGoHome={closeMainExperience}
+            onOpenCctAdvanced={() => setScreen('cct-advanced')}
+            centralDim={centralDim}
+            onCentralDimChange={setCentralDim}
+            fitaBrightness={fitaBrightness}
+            onFitaBrightnessChange={setFitaBrightness}
+            fitaHue={fitaHue}
+            onFitaHueChange={handleFitaHueChange}
+            pickedColor={pickedColor}
+            rgbColor={rgbColor}
+            fitaExpanded={fitaExpanded}
+            onFitaExpandedChange={setFitaExpanded}
+            wheelPos={wheelPos}
+            onWheelColorChange={handleWheelColorChange}
+            fitaBrightness2={fitaBrightness2}
+            onFitaBrightness2Change={setFitaBrightness2}
+            fitaHue2={fitaHue2}
+            onFitaHue2Change={handleFitaHue2Change}
+            pickedColor2={pickedColor2}
+            rgbColor2={rgbColor2}
+            fita2Expanded={fita2Expanded}
+            onFita2ExpandedChange={setFita2Expanded}
+            ringAngle2={ringAngle2}
+            onRingAngle2Change={handleRingHueChange2}
+            fitaSat2={fitaSat2}
+            onFitaSat2Change={setFitaSat2}
+            bancadaOn={bancadaOn}
+            onBancadaChange={setBancadaOn}
+            cctIntensity={cctIntensity}
+            onCctIntensityChange={setCctIntensity}
+            cctTemp={cctTemp}
+            onCctTempChange={setCctTemp}
+            circAuto={circAuto}
+            cctColor={cctColor}
+            cctExpanded={cctExpanded}
+            onCctExpandedChange={setCctExpanded}
           />
         </div>
       )}
@@ -1149,6 +1390,985 @@ function HomeScreen({
 // ─── Main Screen (lighting panel) ─────────────────────────────────────────────
 
 function MainScreen({
+  onGoHome,
+  onOpenCctAdvanced,
+  centralDim,
+  onCentralDimChange,
+  fitaBrightness,
+  onFitaBrightnessChange,
+  fitaHue,
+  onFitaHueChange,
+  pickedColor,
+  rgbColor,
+  fitaExpanded,
+  onFitaExpandedChange,
+  wheelPos,
+  onWheelColorChange,
+  fitaBrightness2,
+  onFitaBrightness2Change,
+  fitaHue2,
+  onFitaHue2Change,
+  pickedColor2,
+  rgbColor2,
+  fita2Expanded,
+  onFita2ExpandedChange,
+  ringAngle2,
+  onRingAngle2Change,
+  fitaSat2,
+  onFitaSat2Change,
+  bancadaOn,
+  onBancadaChange,
+  cctIntensity,
+  onCctIntensityChange,
+  cctTemp,
+  onCctTempChange,
+  circAuto,
+  cctColor,
+  cctExpanded,
+  onCctExpandedChange,
+}: {
+  onGoHome: () => void
+  onOpenCctAdvanced: () => void
+  centralDim: number
+  onCentralDimChange: (v: number) => void
+  fitaBrightness: number
+  onFitaBrightnessChange: (v: number) => void
+  fitaHue: number
+  onFitaHueChange: (v: number) => void
+  pickedColor: string
+  rgbColor: string
+  fitaExpanded: boolean
+  onFitaExpandedChange: (v: boolean) => void
+  wheelPos: { x: number; y: number }
+  onWheelColorChange: (
+    hue: number,
+    sat: number,
+    rawX: number,
+    rawY: number,
+  ) => void
+  fitaBrightness2: number
+  onFitaBrightness2Change: (v: number) => void
+  fitaHue2: number
+  onFitaHue2Change: (v: number) => void
+  pickedColor2: string
+  rgbColor2: string
+  fita2Expanded: boolean
+  onFita2ExpandedChange: (v: boolean) => void
+  ringAngle2: number
+  onRingAngle2Change: (deg: number) => void
+  fitaSat2: number
+  onFitaSat2Change: (v: number) => void
+  bancadaOn: boolean
+  onBancadaChange: (v: boolean) => void
+  cctIntensity: number
+  onCctIntensityChange: (v: number) => void
+  cctTemp: number
+  onCctTempChange: (v: number) => void
+  circAuto: boolean
+  cctColor: string
+  cctExpanded: boolean
+  onCctExpandedChange: (v: boolean) => void
+}) {
+  const pureHueColor2 = hslToBlendedColor(ringAngle2, 1)
+  // Ring handle / sat-slider thumb color — always the true angle+sat blend, unlike
+  // pickedColor2 which forces white at fitaHue2 === 0 for the collapsed linear slider
+  const ringColor2 = hslToBlendedColor(ringAngle2, fitaSat2)
+
+  // Drives the inline Fita LED color wheel (mirrors RGBAdvancedScreen's moveSelector)
+  const wheelRef = useRef<HTMLDivElement>(null)
+  const moveWheelSelector = (clientX: number, clientY: number) => {
+    if (!wheelRef.current) return
+    const rect = wheelRef.current.getBoundingClientRect()
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    let dx = clientX - cx
+    let dy = clientY - cy
+    const d = Math.sqrt(dx * dx + dy * dy)
+    if (d > 150) {
+      dx = (dx / d) * 150
+      dy = (dy / d) * 150
+    }
+    const sat = Math.min(Math.sqrt(dx * dx + dy * dy) / 150, 1)
+    const angleDeg = Math.atan2(dy, dx) * (180 / Math.PI)
+    const hue = (((angleDeg + 90) % 360) + 360) % 360
+    onWheelColorChange(hue, sat, dx, dy)
+  }
+
+  return (
+    <div
+      style={{
+        background: '#000',
+        width: '100%',
+        height: '100vh',
+        position: 'relative',
+        overflow: 'hidden',
+        fontFamily: M,
+        maxWidth: 393,
+        margin: '0 auto',
+      }}
+    >
+      {/* ── Scrollable content ──────────────────────────────────────────────── */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 122,
+          bottom: 34,
+          left: 0,
+          right: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          scrollbarWidth: 'none',
+        }}
+      >
+        {/* Ambient card */}
+        <div style={{ position: 'relative', width: '100%' }}>
+          <img
+            src={imgVaranda}
+            alt="Varanda Gourmet"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              pointerEvents: 'none',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              backgroundImage:
+                'linear-gradient(0deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 33%, rgba(0,0,0,0) 37%, rgba(0,0,0,0.6) 100%)',
+            }}
+          />
+          <div style={{ position: 'relative' }}>
+            <div
+              style={{
+                padding: '24px 12px 24px 24px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  height: 32,
+                }}
+              >
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 2,
+                    top: 29,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <svg width="8" height="14" viewBox="0 0 8 14" fill="none">
+                    <path
+                      d="M7 13L1 7L7 1"
+                      stroke="white"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                    />
+                  </svg>
+                </div>
+                <span
+                  style={{
+                    fontFamily: M,
+                    fontWeight: 600,
+                    fontSize: 26,
+                    color: 'white',
+                    flex: '1 0 0',
+                    lineHeight: 1,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Varanda Gourmet
+                </span>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <svg
+                    width="11"
+                    height="18"
+                    viewBox="0 0 11.0001 18"
+                    fill="none"
+                  >
+                    <path d={svgPaths.p9c99c00} fill="white" />
+                  </svg>
+                  <span
+                    style={{
+                      fontFamily: M,
+                      fontWeight: 600,
+                      fontSize: 24,
+                      color: 'white',
+                      lineHeight: 1,
+                    }}
+                  >
+                    27°
+                  </span>
+                </div>
+              </div>
+            </div>
+            <ActionMenu
+              anyLightOn={
+                centralDim > 0 ||
+                fitaBrightness > 0 ||
+                fitaBrightness2 > 0 ||
+                cctIntensity > 0 ||
+                bancadaOn
+              }
+            />
+          </div>
+        </div>
+
+        {/* ── Iluminação section ─────────────────────────────────────────────── */}
+        <div
+          style={{
+            padding: '31px 31px 12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 24,
+          }}
+        >
+          {/* Label */}
+          <div
+            style={{
+              position: 'relative',
+              height: 25,
+              width: '100%',
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              borderBottom: '1px solid #7D7D7D',
+            }}
+          >
+            <span
+              style={{
+                fontFamily: M,
+                fontWeight: 700,
+                fontSize: 10,
+                color: '#B7B7B7',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                lineHeight: 'normal',
+              }}
+            >
+              Luminárias
+            </span>
+          </div>
+
+          {/* Luminarias list */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 32,
+              width: '100%',
+            }}
+          >
+            {/* ── Central ──────────────────────────────────────────────────── */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <LumHeader name="Central" />
+              <Slider
+                value={centralDim}
+                onChange={onCentralDimChange}
+                thumbColor="#FFCC33"
+                tooltipFill="rgba(112,112,112,0.85)"
+              />
+            </div>
+
+            {/* ── Fita LED ─────────────────────────────────────────────────── */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <LumHeader
+                name="Fita LED"
+                extra={
+                  <ExpandToggleIcon
+                    open={fitaExpanded}
+                    onClick={() => onFitaExpandedChange(!fitaExpanded)}
+                  />
+                }
+              />
+              <div
+                style={{ display: 'flex', flexDirection: 'column', gap: 24 }}
+              >
+                {/* Brightness */}
+                <Slider
+                  value={fitaBrightness}
+                  onChange={onFitaBrightnessChange}
+                  trackFill={
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: `${fitaBrightness}%`,
+                        background: pickedColor,
+                        borderRadius: 1.5,
+                      }}
+                    />
+                  }
+                  thumbColor={pickedColor}
+                  thumbContent={
+                    <div
+                      style={{
+                        width: 13,
+                        height: 13,
+                        borderRadius: '50%',
+                        background: 'white',
+                      }}
+                    />
+                  }
+                  tooltipFill="rgba(112,112,112,0.85)"
+                />
+
+                {/* Chromatic — simple slider (collapsed) or full color wheel (expanded) */}
+                {fitaExpanded ? (
+                  <div
+                    ref={wheelRef}
+                    style={{
+                      position: 'relative',
+                      width: 300,
+                      height: 300,
+                      margin: '0 auto',
+                      borderRadius: '50%',
+                      flexShrink: 0,
+                      cursor: 'crosshair',
+                      touchAction: 'none',
+                      userSelect: 'none',
+                    }}
+                    onPointerDown={(e) => {
+                      e.currentTarget.setPointerCapture(e.pointerId)
+                      moveWheelSelector(e.clientX, e.clientY)
+                    }}
+                    onPointerMove={(e) => {
+                      if (!e.currentTarget.hasPointerCapture(e.pointerId))
+                        return
+                      moveWheelSelector(e.clientX, e.clientY)
+                    }}
+                  >
+                    <img
+                      src={imgMatizes}
+                      alt=""
+                      draggable={false}
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        width: '100%',
+                        height: '100%',
+                        borderRadius: '50%',
+                        transform: 'rotate(-90deg)',
+                        pointerEvents: 'none',
+                      }}
+                    />
+                    <svg
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        pointerEvents: 'none',
+                      }}
+                      width="300"
+                      height="300"
+                      viewBox="0 0 300 300"
+                    >
+                      <defs>
+                        <radialGradient
+                          id="fitaWheelWhiteGrad"
+                          cx="50%"
+                          cy="50%"
+                          r="50%"
+                        >
+                          <stop offset="0%" stopColor="white" />
+                          <stop
+                            offset="100%"
+                            stopColor="white"
+                            stopOpacity="0"
+                          />
+                        </radialGradient>
+                      </defs>
+                      <circle
+                        cx="150"
+                        cy="150"
+                        r="150"
+                        fill="url(#fitaWheelWhiteGrad)"
+                      />
+                    </svg>
+                    {(() => {
+                      const d = Math.sqrt(wheelPos.x ** 2 + wheelPos.y ** 2)
+                      const sat = Math.min(d / 150, 1)
+                      const hue =
+                        ((Math.atan2(wheelPos.y, wheelPos.x) * 180) /
+                          Math.PI +
+                          90 +
+                          360) %
+                        360
+                      const selectorColor = hslToBlendedColor(hue, sat)
+                      return (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            left: 150 + wheelPos.x - 16,
+                            top: 150 + wheelPos.y - 16,
+                            width: 32,
+                            height: 32,
+                            borderRadius: '50%',
+                            background: selectorColor,
+                            border: '3px solid white',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.45)',
+                            pointerEvents: 'none',
+                          }}
+                        />
+                      )
+                    })()}
+                  </div>
+                ) : (
+                  <Slider
+                    value={fitaHue}
+                    onChange={onFitaHueChange}
+                    trackBg="transparent"
+                    trackFill={
+                      <>
+                        <div
+                          style={{
+                            position: 'absolute',
+                            inset: 0,
+                            backgroundImage:
+                              'linear-gradient(90deg, rgb(255,0,128) 8%, rgb(255,0,255) 17%, rgb(127,0,255) 25%, rgb(0,0,255) 33%, rgb(0,127,255) 42%, rgb(0,255,255) 50%, rgb(0,255,127) 58%, rgb(0,255,0) 67%, rgb(127,255,0) 75%, rgb(255,255,0) 83%, rgb(255,127,0) 92%, rgb(255,0,0) 100%)',
+                            borderRadius: 1.5,
+                          }}
+                        />
+                        {/* white overlay at start */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            left: 0,
+                            top: 0,
+                            bottom: 0,
+                            width: 13,
+                            background: 'white',
+                          }}
+                        />
+                      </>
+                    }
+                    thumbContent={
+                      <div
+                        style={{
+                          width: 13,
+                          height: 13,
+                          borderRadius: '50%',
+                          background: rgbColor,
+                          border: '1.5px solid white',
+                          boxSizing: 'border-box',
+                        }}
+                      />
+                    }
+                    tooltipFill={
+                      fitaHue === 0 ? 'rgba(200,200,200,0.9)' : pickedColor
+                    }
+                    tooltipContent={null}
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* ── Fita LED 2 ───────────────────────────────────────────────── */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <LumHeader
+                name="Fita LED 2"
+                extra={
+                  <ExpandToggleIcon
+                    open={fita2Expanded}
+                    onClick={() => onFita2ExpandedChange(!fita2Expanded)}
+                  />
+                }
+              />
+              <div
+                style={{ display: 'flex', flexDirection: 'column', gap: 24 }}
+              >
+                {/* Brightness */}
+                <Slider
+                  value={fitaBrightness2}
+                  onChange={onFitaBrightness2Change}
+                  trackFill={
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: `${fitaBrightness2}%`,
+                        background: pickedColor2,
+                        borderRadius: 1.5,
+                      }}
+                    />
+                  }
+                  thumbColor={pickedColor2}
+                  thumbContent={
+                    <div
+                      style={{
+                        width: 13,
+                        height: 13,
+                        borderRadius: '50%',
+                        background: 'white',
+                      }}
+                    />
+                  }
+                  tooltipFill="rgba(112,112,112,0.85)"
+                />
+
+                {/* Chromatic — simple slider (collapsed) or hue ring + white slider (expanded) */}
+                {fita2Expanded ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      width: '100%',
+                      padding: '0 12px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: 'relative',
+                        width: 240,
+                        height: 240,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <img
+                        src={imgAnelCromatico}
+                        alt=""
+                        draggable={false}
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          width: '100%',
+                          height: '100%',
+                          borderRadius: '50%',
+                          transform: 'rotate(-90deg)',
+                          pointerEvents: 'none',
+                        }}
+                      />
+                      <RingHueHandle
+                        angleDeg={ringAngle2}
+                        onDrag={onRingAngle2Change}
+                        color={ringColor2}
+                      />
+                    </div>
+                    <VerticalSatSlider
+                      value={Math.round(fitaSat2 * 100)}
+                      onChange={(v) => onFitaSat2Change(v / 100)}
+                      topColor={pureHueColor2}
+                      thumbColor={ringColor2}
+                    />
+                  </div>
+                ) : (
+                  <Slider
+                    value={fitaHue2}
+                    onChange={onFitaHue2Change}
+                    trackBg="transparent"
+                    trackFill={
+                      <>
+                        <div
+                          style={{
+                            position: 'absolute',
+                            inset: 0,
+                            backgroundImage:
+                              'linear-gradient(90deg, rgb(255,0,128) 8%, rgb(255,0,255) 17%, rgb(127,0,255) 25%, rgb(0,0,255) 33%, rgb(0,127,255) 42%, rgb(0,255,255) 50%, rgb(0,255,127) 58%, rgb(0,255,0) 67%, rgb(127,255,0) 75%, rgb(255,255,0) 83%, rgb(255,127,0) 92%, rgb(255,0,0) 100%)',
+                            borderRadius: 1.5,
+                          }}
+                        />
+                        {/* white overlay at start */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            left: 0,
+                            top: 0,
+                            bottom: 0,
+                            width: 13,
+                            background: 'white',
+                          }}
+                        />
+                      </>
+                    }
+                    thumbContent={
+                      <div
+                        style={{
+                          width: 13,
+                          height: 13,
+                          borderRadius: '50%',
+                          background: rgbColor2,
+                          border: '1.5px solid white',
+                          boxSizing: 'border-box',
+                        }}
+                      />
+                    }
+                    tooltipFill={
+                      fitaHue2 === 0 ? 'rgba(200,200,200,0.9)' : pickedColor2
+                    }
+                    tooltipContent={null}
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* ── Bancada ON/OFF ────────────────────────────────────────────── */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <LumHeader name="Bancada" />
+              <button
+                onClick={() => onBancadaChange(!bancadaOn)}
+                style={{
+                  width: '100%',
+                  height: 23,
+                  background: 'none',
+                  border: 'none',
+                  padding: '5px 0',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+              >
+                <div
+                  style={{
+                    flex: '1 0 0',
+                    height: 13,
+                    borderRadius: 4,
+                    background: bancadaOn ? '#FFCC33' : 'transparent',
+                    border: `1px solid ${bancadaOn ? '#FFCC33' : 'white'}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'background 0.2s ease, border-color 0.2s ease',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontFamily: M,
+                      fontWeight: 600,
+                      fontSize: 10,
+                      color: bancadaOn ? 'black' : 'white',
+                      lineHeight: 1,
+                    }}
+                  >
+                    {bancadaOn ? 'ON' : 'OFF'}
+                  </span>
+                </div>
+              </button>
+            </div>
+
+            {/* ── LED CCT/Circadiano ────────────────────────────────────────── */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <LumHeader
+                name="LED CCT/Circadiano"
+                extra={
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 16,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <button
+                      onClick={onOpenCctAdvanced}
+                      style={{
+                        background: circAuto ? '#FFCC33' : 'transparent',
+                        border: `1px solid ${circAuto ? '#FFCC33' : 'white'}`,
+                        height: 22,
+                        borderRadius: 4,
+                        padding: '0 7px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        minWidth: 50,
+                        cursor: 'pointer',
+                        transition: 'background 0.2s, border-color 0.2s',
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontFamily: M,
+                          fontWeight: 600,
+                          fontSize: 10,
+                          color: circAuto ? 'black' : 'white',
+                          textAlign: 'center',
+                        }}
+                      >
+                        CIRC.
+                      </span>
+                    </button>
+                    <ExpandToggleIcon
+                      open={cctExpanded}
+                      onClick={() => onCctExpandedChange(!cctExpanded)}
+                    />
+                  </div>
+                }
+              />
+              <div
+                style={{ display: 'flex', flexDirection: 'column', gap: 18 }}
+              >
+                {/* CCT Intensity */}
+                <Slider
+                  value={cctIntensity}
+                  onChange={onCctIntensityChange}
+                  trackFill={
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: `${cctIntensity}%`,
+                        background: cctColor,
+                        borderRadius: 1.5,
+                      }}
+                    />
+                  }
+                  thumbColor={cctColor}
+                  thumbContent={
+                    <div
+                      style={{
+                        width: 13,
+                        height: 13,
+                        borderRadius: '50%',
+                        background: 'white',
+                      }}
+                    />
+                  }
+                  tooltipFill="rgba(112,112,112,0.85)"
+                />
+
+                {/* CCT Chromatic — linear slider (collapsed) or circadian ring (expanded) */}
+                {cctExpanded ? (
+                  <div
+                    style={{
+                      position: 'relative',
+                      width: 300,
+                      height: 300,
+                      margin: '0 auto',
+                      flexShrink: 0,
+                      userSelect: 'none',
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: '12.95%',
+                      }}
+                    >
+                      <img
+                        src={imgCctArc}
+                        alt=""
+                        draggable={false}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          height: '100%',
+                          pointerEvents: 'none',
+                          objectFit: 'contain',
+                        }}
+                      />
+                    </div>
+
+                    {/* Center label — manual mode also gets the ±100K step arrows */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: 0,
+                        right: 0,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      {!circAuto && (
+                        <CircadianStepArrow
+                          direction="up"
+                          onClick={() =>
+                            onCctTempChange(
+                              clamp(
+                                Math.round(
+                                  kToCctTemp(cctTempToK(cctTemp) + CCT_STEP_K),
+                                ),
+                                0,
+                                100,
+                              ),
+                            )
+                          }
+                        />
+                      )}
+                      <span
+                        style={{
+                          fontFamily: M,
+                          fontWeight: 600,
+                          fontSize: 24,
+                          color: 'white',
+                          lineHeight: 1.3,
+                          textAlign: 'center',
+                        }}
+                      >
+                        {kValueLabel(cctTemp / 100)}
+                      </span>
+                      {!circAuto && (
+                        <CircadianStepArrow
+                          direction="down"
+                          onClick={() =>
+                            onCctTempChange(
+                              clamp(
+                                Math.round(
+                                  kToCctTemp(cctTempToK(cctTemp) - CCT_STEP_K),
+                                ),
+                                0,
+                                100,
+                              ),
+                            )
+                          }
+                        />
+                      )}
+                    </div>
+
+                    {/* Ring handle — draggable puck (manual) or traveling icon (automatic) */}
+                    {circAuto ? (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: cctTToPos(cctTemp / 100).x - 18,
+                          top: cctTToPos(cctTemp / 100).y - 18,
+                        }}
+                      >
+                        <CctAutoRingIcon color={cctColor} />
+                      </div>
+                    ) : (
+                      <CctArcHandle
+                        t={cctTemp / 100}
+                        fillColor={cctColor}
+                        onDrag={(newT) =>
+                          onCctTempChange(Math.round(snapCctTemp(newT * 100)))
+                        }
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <Slider
+                    value={cctTemp}
+                    onChange={(v) => {
+                      if (!circAuto) onCctTempChange(v)
+                    }}
+                    disabled={circAuto}
+                    trackH={3}
+                    trackBg="transparent"
+                    trackFill={
+                      <div
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          background:
+                            'linear-gradient(to right, #FF8800, #FFFFFF, #88BBFF)',
+                          borderRadius: 1.5,
+                        }}
+                      />
+                    }
+                    thumbContent={
+                      circAuto ? (
+                        <CCTThumb borderColor={cctColor} />
+                      ) : (
+                        <div
+                          style={{
+                            width: 13,
+                            height: 13,
+                            borderRadius: '50%',
+                            background: 'white',
+                          }}
+                        />
+                      )
+                    }
+                    thumbW={circAuto ? 45 : 13}
+                    thumbH={circAuto ? 25 : 13}
+                    tooltipFill={cctColor}
+                    tooltipContent={
+                      <span
+                        style={{
+                          fontFamily: M,
+                          fontWeight: 600,
+                          fontSize: 13,
+                          color: 'black',
+                          display: 'block',
+                          lineHeight: 1,
+                        }}
+                      >
+                        {kValueLabel(cctTemp / 100)}
+                      </span>
+                    }
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Top bars ─────────────────────────────────────────────────────────── */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 20,
+          background: '#000',
+        }}
+      >
+        <StatusBar />
+        <NavBar onHomeClick={onGoHome} />
+      </div>
+
+      {/* ── Home indicator ────────────────────────────────────────────────────── */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: 34,
+          zIndex: 20,
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 8,
+            left: '33.33%',
+            right: '33.33%',
+            height: 5,
+            borderRadius: 2.5,
+            background: 'white',
+          }}
+        />
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Screen (Classic — full-screen advanced mode, proposal #1) ──────────
+
+function MainScreenClassic({
   onGoHome,
   onOpenRgbAdvanced,
   onOpenRgb2Advanced,
@@ -1736,7 +2956,7 @@ function MainScreen({
                         lineHeight: 1,
                       }}
                     >
-                      {Math.round(2700 + (cctTemp / 100) * (6500 - 2700))}K
+                      {kValueLabel(cctTemp / 100)}
                     </span>
                   }
                 />
@@ -1788,9 +3008,9 @@ function MainScreen({
   )
 }
 
-// ─── RGB Advanced Screen ──────────────────────────────────────────────────────
+// ─── RGB Advanced Screen (Classic) ────────────────────────────────────────────
 
-function RGBAdvancedScreen({
+function RGBAdvancedScreenClassic({
   onBack,
   brightness,
   onBrightnessChange,
@@ -2179,147 +3399,9 @@ function RGBAdvancedScreen({
   )
 }
 
-// ─── RGB 2 Advanced Screen (hue ring + separate saturation slider) ───────────
+// ─── RGB 2 Advanced Screen (Classic — hue ring + separate saturation slider) ──
 
-// Fixed radius (px from ring center) where the hue handle sits, on the ring band
-const RING2_RADIUS = 102
-
-// Visible handle diameter (28px circle + 2px stroke), centered exactly on the ring point
-const RING2_HANDLE_SIZE = 30
-
-function RingHueHandle({
-  angleDeg,
-  onDrag,
-  color,
-}: {
-  angleDeg: number
-  onDrag: (deg: number) => void
-  color: string
-}) {
-  const angleRad = ((angleDeg - 90) * Math.PI) / 180
-  const x = 120 + RING2_RADIUS * Math.cos(angleRad)
-  const y = 120 + RING2_RADIUS * Math.sin(angleRad)
-  const containerRef = useRef<HTMLElement | null>(null)
-
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: x - RING2_HANDLE_SIZE / 2,
-        top: y - RING2_HANDLE_SIZE / 2,
-        width: RING2_HANDLE_SIZE,
-        height: RING2_HANDLE_SIZE,
-        touchAction: 'none',
-        userSelect: 'none',
-        cursor: 'grab',
-        zIndex: 10,
-      }}
-      onPointerDown={(e) => {
-        e.currentTarget.setPointerCapture(e.pointerId)
-        containerRef.current = e.currentTarget.parentElement
-      }}
-      onPointerMove={(e) => {
-        if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
-        const container = containerRef.current
-        if (!container) return
-        const rect = container.getBoundingClientRect()
-        const dx = e.clientX - (rect.left + rect.width / 2)
-        const dy = e.clientY - (rect.top + rect.height / 2)
-        const deg = ((Math.atan2(dy, dx) * 180) / Math.PI + 90 + 360) % 360
-        onDrag(deg)
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          borderRadius: '50%',
-          background: color,
-          border: '2px solid white',
-          boxSizing: 'border-box',
-          boxShadow: '0 3.2px 3.2px rgba(0,0,0,0.5)',
-          pointerEvents: 'none',
-        }}
-      />
-    </div>
-  )
-}
-
-function VerticalSatSlider({
-  value,
-  onChange,
-  topColor,
-  thumbColor,
-}: {
-  value: number
-  onChange: (v: number) => void
-  topColor: string
-  thumbColor: string
-}) {
-  const trackRef = useRef<HTMLDivElement>(null)
-  const THUMB = 30
-  // Keeps the thumb's edge 3px shy of the track's top/bottom so it never touches the rounded ends
-  const END_MARGIN = 3
-
-  const getVal = useCallback(
-    (clientY: number) => {
-      if (!trackRef.current) return value
-      const r = trackRef.current.getBoundingClientRect()
-      const usable = r.height - THUMB - END_MARGIN * 2
-      return Math.round(
-        clamp(
-          1 - (clientY - r.top - THUMB / 2 - END_MARGIN) / usable,
-          0,
-          1,
-        ) * 100,
-      )
-    },
-    [value],
-  )
-
-  return (
-    <div
-      ref={trackRef}
-      style={{
-        position: 'relative',
-        width: 36,
-        height: 240,
-        borderRadius: 18,
-        flexShrink: 0,
-        background: `linear-gradient(to bottom, ${topColor} 0%, white 100%)`,
-        touchAction: 'none',
-        userSelect: 'none',
-      }}
-      onPointerDown={(e) => {
-        e.currentTarget.setPointerCapture(e.pointerId)
-        onChange(getVal(e.clientY))
-      }}
-      onPointerMove={(e) => {
-        if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
-        onChange(getVal(e.clientY))
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          left: '50%',
-          top: `calc(${THUMB / 2 + END_MARGIN}px + ${1 - value / 100} * (100% - ${THUMB + END_MARGIN * 2}px))`,
-          transform: 'translate(-50%, -50%)',
-          width: THUMB,
-          height: THUMB,
-          borderRadius: '50%',
-          background: thumbColor,
-          border: '2px solid white',
-          boxSizing: 'border-box',
-          boxShadow: '0 3px 3px rgba(0,0,0,0.35)',
-          pointerEvents: 'none',
-        }}
-      />
-    </div>
-  )
-}
-
-function RGB2AdvancedScreen({
+function RGB2AdvancedScreenClassic({
   onBack,
   brightness,
   onBrightnessChange,
@@ -2578,6 +3660,146 @@ function RGB2AdvancedScreen({
   )
 }
 
+// ─── RGB 2 Advanced Screen (hue ring + separate saturation slider) ───────────
+
+// Fixed radius (px from ring center) where the hue handle sits, on the ring band
+const RING2_RADIUS = 102
+
+// Visible handle diameter (28px circle + 2px stroke), centered exactly on the ring point
+const RING2_HANDLE_SIZE = 30
+
+function RingHueHandle({
+  angleDeg,
+  onDrag,
+  color,
+}: {
+  angleDeg: number
+  onDrag: (deg: number) => void
+  color: string
+}) {
+  const angleRad = ((angleDeg - 90) * Math.PI) / 180
+  const x = 120 + RING2_RADIUS * Math.cos(angleRad)
+  const y = 120 + RING2_RADIUS * Math.sin(angleRad)
+  const containerRef = useRef<HTMLElement | null>(null)
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: x - RING2_HANDLE_SIZE / 2,
+        top: y - RING2_HANDLE_SIZE / 2,
+        width: RING2_HANDLE_SIZE,
+        height: RING2_HANDLE_SIZE,
+        touchAction: 'none',
+        userSelect: 'none',
+        cursor: 'grab',
+        zIndex: 10,
+      }}
+      onPointerDown={(e) => {
+        e.currentTarget.setPointerCapture(e.pointerId)
+        containerRef.current = e.currentTarget.parentElement
+      }}
+      onPointerMove={(e) => {
+        if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+        const container = containerRef.current
+        if (!container) return
+        const rect = container.getBoundingClientRect()
+        const dx = e.clientX - (rect.left + rect.width / 2)
+        const dy = e.clientY - (rect.top + rect.height / 2)
+        const deg = ((Math.atan2(dy, dx) * 180) / Math.PI + 90 + 360) % 360
+        onDrag(deg)
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          borderRadius: '50%',
+          background: color,
+          border: '2px solid white',
+          boxSizing: 'border-box',
+          boxShadow: '0 3.2px 3.2px rgba(0,0,0,0.5)',
+          pointerEvents: 'none',
+        }}
+      />
+    </div>
+  )
+}
+
+function VerticalSatSlider({
+  value,
+  onChange,
+  topColor,
+  thumbColor,
+}: {
+  value: number
+  onChange: (v: number) => void
+  topColor: string
+  thumbColor: string
+}) {
+  const trackRef = useRef<HTMLDivElement>(null)
+  const THUMB = 30
+  // Keeps the thumb's edge 3px shy of the track's top/bottom so it never touches the rounded ends
+  const END_MARGIN = 3
+
+  const getVal = useCallback(
+    (clientY: number) => {
+      if (!trackRef.current) return value
+      const r = trackRef.current.getBoundingClientRect()
+      const usable = r.height - THUMB - END_MARGIN * 2
+      return Math.round(
+        clamp(
+          1 - (clientY - r.top - THUMB / 2 - END_MARGIN) / usable,
+          0,
+          1,
+        ) * 100,
+      )
+    },
+    [value],
+  )
+
+  return (
+    <div
+      ref={trackRef}
+      style={{
+        position: 'relative',
+        width: 36,
+        height: 240,
+        borderRadius: 18,
+        flexShrink: 0,
+        background: `linear-gradient(to bottom, ${topColor} 0%, white 100%)`,
+        touchAction: 'none',
+        userSelect: 'none',
+      }}
+      onPointerDown={(e) => {
+        e.currentTarget.setPointerCapture(e.pointerId)
+        onChange(getVal(e.clientY))
+      }}
+      onPointerMove={(e) => {
+        if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+        onChange(getVal(e.clientY))
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          left: '50%',
+          top: `calc(${THUMB / 2 + END_MARGIN}px + ${1 - value / 100} * (100% - ${THUMB + END_MARGIN * 2}px))`,
+          transform: 'translate(-50%, -50%)',
+          width: THUMB,
+          height: THUMB,
+          borderRadius: '50%',
+          background: thumbColor,
+          border: '2px solid white',
+          boxSizing: 'border-box',
+          boxShadow: '0 3px 3px rgba(0,0,0,0.35)',
+          pointerEvents: 'none',
+        }}
+      />
+    </div>
+  )
+}
+
 // ─── CCT Advanced Screen ──────────────────────────────────────────────────────
 
 // Margin so handles never reach the very tip of the arc image (one step ≈ 0.01)
@@ -2603,7 +3825,7 @@ function cctPosToT(dx: number, dy: number): number {
 }
 
 function kValueLabel(t: number): string {
-  return Math.round(2700 + t * 3800) + 'K'
+  return cctTempToK(t * 100) + 'K'
 }
 
 function CctArcHandle({
@@ -2718,7 +3940,7 @@ function CctAdvancedScreen({
   const minT = cctTempMin / 100
   const maxT = cctTempMax / 100
   const centerLabel = circAuto
-    ? `${Math.round(2700 + minT * 3800)}K–\n${Math.round(2700 + maxT * 3800)}K`
+    ? `${kValueLabel(minT)}–\n${kValueLabel(maxT)}`
     : kValueLabel(singleT)
 
   return (
@@ -2914,7 +4136,7 @@ function CctAdvancedScreen({
                   fillColor={cctToColor(cctTempMin)}
                   onDrag={(newT) =>
                     onCctTempMinChange(
-                      Math.round(Math.min(newT, maxT - 0.01) * 100),
+                      Math.round(snapCctTemp(Math.min(newT, maxT - 0.01) * 100)),
                     )
                   }
                 />
@@ -2923,7 +4145,7 @@ function CctAdvancedScreen({
                   fillColor={cctToColor(cctTempMax)}
                   onDrag={(newT) =>
                     onCctTempMaxChange(
-                      Math.round(Math.max(newT, minT + 0.01) * 100),
+                      Math.round(snapCctTemp(Math.max(newT, minT + 0.01) * 100)),
                     )
                   }
                 />
@@ -2932,7 +4154,9 @@ function CctAdvancedScreen({
               <CctArcHandle
                 t={singleT}
                 fillColor={cctToColor(cctTemp)}
-                onDrag={(newT) => onCctTempChange(Math.round(newT * 100))}
+                onDrag={(newT) =>
+                  onCctTempChange(Math.round(snapCctTemp(newT * 100)))
+                }
               />
             )}
           </div>
