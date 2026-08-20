@@ -4226,6 +4226,8 @@ function RGBAdvancedScreen3({
   pickedColor: string
 }) {
   const wheelRef = useRef<HTMLDivElement>(null)
+  // Dim the wheel to 50% when the strip is fully off, same as proposal #2
+  const wheelOpacity = brightness === 0 ? 0.5 : 1
 
   const moveSelector = (clientX: number, clientY: number) => {
     if (!wheelRef.current) return
@@ -4317,6 +4319,8 @@ function RGBAdvancedScreen3({
               cursor: 'crosshair',
               touchAction: 'none',
               userSelect: 'none',
+              opacity: wheelOpacity,
+              transition: 'opacity 0.2s ease',
             }}
             onPointerDown={(e) => {
               e.currentTarget.setPointerCapture(e.pointerId)
@@ -4398,6 +4402,8 @@ function RGBAdvancedScreen3({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              opacity: wheelOpacity,
+              transition: 'opacity 0.2s ease',
             }}
           >
             <span
@@ -5643,6 +5649,8 @@ function CctCircleScreen3({
     cctTempMax > cctTempMin
       ? clamp((cctTemp - cctTempMin) / (cctTempMax - cctTempMin), 0, 1)
       : 0.5
+  // Dim the circle to 50% when the strip is fully off, same as proposal #2
+  const circleOpacity = cctIntensity === 0 ? 0.5 : 1
 
   const circleRef = useRef<HTMLDivElement>(null)
   // Which handle the current drag gesture is moving — chosen by proximity on
@@ -5839,6 +5847,8 @@ function CctCircleScreen3({
               touchAction: 'none',
               userSelect: 'none',
               background: `linear-gradient(180deg, ${cctToColor(100)} 0%, white 50%, ${cctToColor(0)} 100%)`,
+              opacity: circleOpacity,
+              transition: 'opacity 0.2s ease',
             }}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
@@ -5872,6 +5882,8 @@ function CctCircleScreen3({
               flexDirection: 'column',
               gap: 4,
               flexShrink: 0,
+              opacity: circleOpacity,
+              transition: 'opacity 0.2s ease',
             }}
           >
             <div
