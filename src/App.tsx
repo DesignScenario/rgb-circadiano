@@ -148,6 +148,36 @@ function rgbToHsv(
   return { hue, sat, val }
 }
 
+// Standard, continuous HSV(h,s,v) -> RGB — no lookup table, so color
+// round-trips exactly (the inverse of rgbToHsv). Used only by proposal #3's
+// RGB wheel/hex field, which has its own independent hue/sat state — the
+// rest of the app's hue/sat model goes through the coarse slider-position
+// system (sliderToHslHue/hslHueToSlider/hueToRgb) instead.
+function hsvToRgb(hue: number, sat: number, val = 1): [number, number, number] {
+  hue = ((hue % 360) + 360) % 360
+  const c = val * sat
+  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1))
+  const m = val - c
+  let r = 0,
+    g = 0,
+    b = 0
+  if (hue < 60) [r, g, b] = [c, x, 0]
+  else if (hue < 120) [r, g, b] = [x, c, 0]
+  else if (hue < 180) [r, g, b] = [0, c, x]
+  else if (hue < 240) [r, g, b] = [0, x, c]
+  else if (hue < 300) [r, g, b] = [x, 0, c]
+  else [r, g, b] = [c, 0, x]
+  return [
+    Math.round((r + m) * 255),
+    Math.round((g + m) * 255),
+    Math.round((b + m) * 255),
+  ]
+}
+function hsvToRgbString(hue: number, sat: number, val = 1): string {
+  const [r, g, b] = hsvToRgb(hue, sat, val)
+  return `rgb(${r},${g},${b})`
+}
+
 // Scales each channel of an "rgb(r,g,b)" string by a 0-1 factor — equivalent
 // to recomputing the color at a given HSV value/brightness, since scaling V
 // in HSV is just a per-channel multiply
@@ -1007,6 +1037,13 @@ export default function App() {
   const [fitaBrightness, setFitaBrightness] = useState(100)
   const [fitaHue, setFitaHue] = useState(0)
   const [fitaSat, setFitaSat] = useState(1)
+  // Proposal #3's Fita LED color — independent of fitaHue/fitaSat above so its
+  // wheel/hex field can be exact continuous HSV (see hsvToRgb) without
+  // inheriting the coarse slider-position system's precision loss. This means
+  // proposal #3's color doesn't sync with proposals #1/#2 (everything else —
+  // brightness, CCT, Bancada — still does).
+  const [p3Hue, setP3Hue] = useState(0)
+  const [p3Sat, setP3Sat] = useState(0)
   const [fitaBrightness2, setFitaBrightness2] = useState(100)
   const [fitaHue2, setFitaHue2] = useState(0)
   const [fitaSat2, setFitaSat2] = useState(1)
@@ -1056,6 +1093,8 @@ export default function App() {
   )
   const rgbColor = fitaHue === 0 ? 'rgb(255,255,255)' : pickedColor
   const cctColor = cctToColor(cctTemp)
+  // Proposal #3's exact Fita LED color (see p3Hue/p3Sat above)
+  const p3Color = hsvToRgbString(p3Hue, p3Sat, 1)
 
   // Fita LED 2 — derived colors (canonical slider-space hue, mirrors fitaHue/pickedColor above)
   const pickedColor2 = hslToBlendedColor(
@@ -1189,9 +1228,11 @@ export default function App() {
         onBack={() => setScreen('main-3')}
         brightness={fitaBrightness}
         onBrightnessChange={setFitaBrightness}
-        wheelPos={wheelPos}
-        onWheelColorChange={handleWheelColorChange}
-        pickedColor={pickedColor}
+        hue={p3Hue}
+        sat={p3Sat}
+        onHueChange={setP3Hue}
+        onSatChange={setP3Sat}
+        pickedColor={p3Color}
       />
     )
   }
@@ -1375,7 +1416,7 @@ export default function App() {
             onCentralDimChange={setCentralDim}
             fitaBrightness={fitaBrightness}
             onFitaBrightnessChange={setFitaBrightness}
-            pickedColor={pickedColor}
+            pickedColor={p3Color}
             bancadaOn={bancadaOn}
             onBancadaChange={setBancadaOn}
             cctIntensity={cctIntensity}
@@ -4273,20 +4314,19 @@ function RGBAdvancedScreen3({
   onBack,
   brightness,
   onBrightnessChange,
-  wheelPos,
-  onWheelColorChange,
+  hue,
+  sat,
+  onHueChange,
+  onSatChange,
   pickedColor,
 }: {
   onBack: () => void
   brightness: number
   onBrightnessChange: (v: number) => void
-  wheelPos: { x: number; y: number }
-  onWheelColorChange: (
-    hue: number,
-    sat: number,
-    rawX: number,
-    rawY: number,
-  ) => void
+  hue: number
+  sat: number
+  onHueChange: (v: number) => void
+  onSatChange: (v: number) => void
   pickedColor: string
 }) {
   const wheelRef = useRef<HTMLDivElement>(null)
@@ -4304,20 +4344,14 @@ function RGBAdvancedScreen3({
 
   // Applies a typed hex live once it's valid: moves the wheel selector (hue/sat)
   // and sets Intensidade from the hex's brightness (the wheel itself has no
-  // value/brightness axis — hslToBlendedColor always assumes 100%).
+  // value/brightness axis — hue/sat alone always render at full brightness).
   const applyHexInput = (raw: string) => {
     const rgb = hexToRgb(raw)
     if (!rgb) return false
-    const { hue, sat, val } = rgbToHsv(...rgb)
-    const angleRad = ((hue - 90) * Math.PI) / 180
-    const radius = sat * 150
-    onWheelColorChange(
-      hue,
-      sat,
-      Math.cos(angleRad) * radius,
-      Math.sin(angleRad) * radius,
-    )
-    onBrightnessChange(Math.round(val * 100))
+    const hsv = rgbToHsv(...rgb)
+    onHueChange(hsv.hue)
+    onSatChange(hsv.sat)
+    onBrightnessChange(Math.round(hsv.val * 100))
     return true
   }
 
@@ -4326,17 +4360,14 @@ function RGBAdvancedScreen3({
     const rect = wheelRef.current.getBoundingClientRect()
     const cx = rect.left + rect.width / 2
     const cy = rect.top + rect.height / 2
-    let dx = clientX - cx
-    let dy = clientY - cy
+    const dx = clientX - cx
+    const dy = clientY - cy
     const d = Math.sqrt(dx * dx + dy * dy)
-    if (d > 150) {
-      dx = (dx / d) * 150
-      dy = (dy / d) * 150
-    }
-    const sat = Math.min(Math.sqrt(dx * dx + dy * dy) / 150, 1)
+    const newSat = Math.min(d / 150, 1)
     const angleDeg = Math.atan2(dy, dx) * (180 / Math.PI)
-    const hue = (((angleDeg + 90) % 360) + 360) % 360
-    onWheelColorChange(hue, sat, dx, dy)
+    const newHue = (((angleDeg + 90) % 360) + 360) % 360
+    onHueChange(newHue)
+    onSatChange(newSat)
   }
 
   return (
@@ -4454,26 +4485,22 @@ function RGBAdvancedScreen3({
               <circle cx="150" cy="150" r="150" fill="url(#rgbWhiteGrad3)" />
             </svg>
 
-            {/* Selector handle — color computed directly from wheel position for zero lag */}
+            {/* Selector handle — position derived straight from hue/sat, exact */}
             {(() => {
-              const d = Math.sqrt(wheelPos.x ** 2 + wheelPos.y ** 2)
-              const sat = Math.min(d / 150, 1)
-              const hue =
-                ((Math.atan2(wheelPos.y, wheelPos.x) * 180) / Math.PI +
-                  90 +
-                  360) %
-                360
-              const selectorColor = hslToBlendedColor(hue, sat)
+              const angleRad = ((hue - 90) * Math.PI) / 180
+              const radius = sat * 150
+              const x = Math.cos(angleRad) * radius
+              const y = Math.sin(angleRad) * radius
               return (
                 <div
                   style={{
                     position: 'absolute',
-                    left: 150 + wheelPos.x - 16,
-                    top: 150 + wheelPos.y - 16,
+                    left: 150 + x - 16,
+                    top: 150 + y - 16,
                     width: 32,
                     height: 32,
                     borderRadius: '50%',
-                    background: selectorColor,
+                    background: pickedColor,
                     border: '3px solid white',
                     boxShadow: '0 4px 12px rgba(0,0,0,0.45)',
                     pointerEvents: 'none',
