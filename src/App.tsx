@@ -92,6 +92,25 @@ function hslToBlendedColor(hue: number, sat: number): string {
   return `rgb(${wr},${wg},${wb})`
 }
 
+// Converts an "rgb(r,g,b)" string (as produced by the helpers above) to "#RRGGBB"
+function rgbStringToHex(rgbStr: string): string {
+  const [r, g, b] = rgbStr.match(/\d+/g)!.map(Number)
+  return (
+    '#' +
+    [r, g, b]
+      .map((c) => c.toString(16).padStart(2, '0'))
+      .join('')
+      .toUpperCase()
+  )
+}
+
+// Perceived-brightness heuristic: light backgrounds get black text, dark backgrounds get white text
+function contrastTextColor(rgbStr: string): string {
+  const [r, g, b] = rgbStr.match(/\d+/g)!.map(Number)
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000
+  return brightness > 150 ? 'black' : 'white'
+}
+
 // Map 0-100 CCT temp to warm (#FF8800) → white (#FFFFFF) → cool (#88BBFF)
 function cctToRgb(temp: number): [number, number, number] {
   if (temp <= 50) {
@@ -916,6 +935,9 @@ export default function App() {
     | 'rgb-advanced-classic'
     | 'rgb2-advanced-classic'
     | 'cct-advanced-classic'
+    | 'main-3'
+    | 'rgb-advanced-3'
+    | 'cct-circle-3'
   >('main')
   // Home is the app's landing screen; the lighting main screen slides in over it
   const [mainMounted, setMainMounted] = useState(false)
@@ -923,6 +945,9 @@ export default function App() {
   // Same Move In slide, but for the classic (full-screen advanced mode) prototype
   const [classicMounted, setClassicMounted] = useState(false)
   const [classicSlideIn, setClassicSlideIn] = useState(false)
+  // Same Move In slide, but for proposal #3 (advanced-only prototype)
+  const [thirdMounted, setThirdMounted] = useState(false)
+  const [thirdSlideIn, setThirdSlideIn] = useState(false)
   const [centralDim, setCentralDim] = useState(100)
   const [fitaBrightness, setFitaBrightness] = useState(100)
   const [fitaHue, setFitaHue] = useState(0)
@@ -1078,6 +1103,66 @@ export default function App() {
     window.setTimeout(() => setClassicMounted(false), MAIN_TRANSITION_MS)
   }
 
+  // Opens proposal #3 (advanced-only lighting screen), sliding it in over Home
+  const openThirdExperience = () => {
+    setScreen('main-3')
+    setThirdMounted(true)
+  }
+
+  // Double rAF so the frame paints off-screen once before the transition kicks in
+  useEffect(() => {
+    if (!thirdMounted) return
+    let raf2 = 0
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setThirdSlideIn(true))
+    })
+    return () => {
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
+    }
+  }, [thirdMounted])
+
+  // Slides proposal #3's screen back out, then unmounts it once the transition ends
+  const closeThirdExperience = () => {
+    setThirdSlideIn(false)
+    window.setTimeout(() => setThirdMounted(false), MAIN_TRANSITION_MS)
+  }
+
+  if (screen === 'rgb-advanced-3') {
+    return (
+      <RGBAdvancedScreen3
+        onBack={() => setScreen('main-3')}
+        brightness={fitaBrightness}
+        onBrightnessChange={setFitaBrightness}
+        wheelPos={wheelPos}
+        onWheelColorChange={handleWheelColorChange}
+        pickedColor={pickedColor}
+      />
+    )
+  }
+
+  if (screen === 'cct-circle-3') {
+    return (
+      <CctCircleScreen3
+        onBack={() => setScreen('main-3')}
+        circAuto={circAuto}
+        onCircAutoChange={(v) => {
+          setCircAuto(v)
+          if (!v)
+            setCctTemp(Math.round(cctTempMin + (cctTempMax - cctTempMin) / 2))
+        }}
+        cctTemp={cctTemp}
+        onCctTempChange={setCctTemp}
+        cctTempMin={cctTempMin}
+        onCctTempMinChange={setCctTempMin}
+        cctTempMax={cctTempMax}
+        onCctTempMaxChange={setCctTempMax}
+        cctIntensity={cctIntensity}
+        onCctIntensityChange={setCctIntensity}
+      />
+    )
+  }
+
   if (screen === 'rgb-advanced-classic') {
     return (
       <RGBAdvancedScreenClassic
@@ -1175,6 +1260,7 @@ export default function App() {
       <HomeScreen
         onOpenAdvanced={openClassicExperience}
         onOpenSecondary={openMainExperience}
+        onOpenThird={openThirdExperience}
       />
       {classicMounted && (
         <div
@@ -1211,6 +1297,34 @@ export default function App() {
             onCctIntensityChange={setCctIntensity}
             cctTemp={cctTemp}
             onCctTempChange={setCctTemp}
+            circAuto={circAuto}
+            cctColor={cctColor}
+          />
+        </div>
+      )}
+      {thirdMounted && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            transform: thirdSlideIn ? 'translateX(0)' : 'translateX(100%)',
+            transition: `transform ${MAIN_TRANSITION_MS}ms cubic-bezier(0.32,0.72,0,1)`,
+            zIndex: 30,
+          }}
+        >
+          <MainScreenThird
+            onGoHome={closeThirdExperience}
+            onOpenRgbAdvanced3={() => setScreen('rgb-advanced-3')}
+            onOpenCctCircle3={() => setScreen('cct-circle-3')}
+            centralDim={centralDim}
+            onCentralDimChange={setCentralDim}
+            fitaBrightness={fitaBrightness}
+            onFitaBrightnessChange={setFitaBrightness}
+            pickedColor={pickedColor}
+            bancadaOn={bancadaOn}
+            onBancadaChange={setBancadaOn}
+            cctIntensity={cctIntensity}
+            onCctIntensityChange={setCctIntensity}
             circAuto={circAuto}
             cctColor={cctColor}
           />
@@ -1287,9 +1401,11 @@ export default function App() {
 function HomeScreen({
   onOpenAdvanced,
   onOpenSecondary,
+  onOpenThird,
 }: {
   onOpenAdvanced: () => void
   onOpenSecondary?: () => void
+  onOpenThird?: () => void
 }) {
   return (
     <div
@@ -1370,7 +1486,7 @@ function HomeScreen({
             padding: '0 12px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
+            justifyContent: 'flex-start',
             fontFamily: M,
             fontWeight: 600,
             fontSize: 16,
@@ -1391,7 +1507,7 @@ function HomeScreen({
             padding: '0 12px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
+            justifyContent: 'flex-start',
             fontFamily: M,
             fontWeight: 600,
             fontSize: 16,
@@ -1401,6 +1517,27 @@ function HomeScreen({
           }}
         >
           #2 - Ajuste na tela principal
+        </button>
+        <button
+          onClick={onOpenThird}
+          style={{
+            height: 50,
+            border: '1px solid white',
+            borderRadius: 4,
+            background: 'transparent',
+            padding: '0 12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            fontFamily: M,
+            fontWeight: 600,
+            fontSize: 16,
+            color: 'white',
+            textAlign: 'center',
+            cursor: onOpenThird ? 'pointer' : 'default',
+          }}
+        >
+          #3 - Ajuste apenas no avançado
         </button>
       </div>
 
@@ -3248,6 +3385,424 @@ function MainScreenClassic({
   )
 }
 
+// ─── Main Screen (Proposal #3 — advanced-only, no inline chromatic controls) ──
+
+function MainScreenThird({
+  onGoHome,
+  onOpenRgbAdvanced3,
+  onOpenCctCircle3,
+  centralDim,
+  onCentralDimChange,
+  fitaBrightness,
+  onFitaBrightnessChange,
+  pickedColor,
+  bancadaOn,
+  onBancadaChange,
+  cctIntensity,
+  onCctIntensityChange,
+  circAuto,
+  cctColor,
+}: {
+  onGoHome: () => void
+  onOpenRgbAdvanced3: () => void
+  onOpenCctCircle3: () => void
+  centralDim: number
+  onCentralDimChange: (v: number) => void
+  fitaBrightness: number
+  onFitaBrightnessChange: (v: number) => void
+  pickedColor: string
+  bancadaOn: boolean
+  onBancadaChange: (v: boolean) => void
+  cctIntensity: number
+  onCctIntensityChange: (v: number) => void
+  circAuto: boolean
+  cctColor: string
+}) {
+  return (
+    <div
+      style={{
+        background: '#000',
+        width: '100%',
+        height: '100vh',
+        position: 'relative',
+        overflow: 'hidden',
+        fontFamily: M,
+        maxWidth: 393,
+        margin: '0 auto',
+      }}
+    >
+      {/* ── Scrollable content ──────────────────────────────────────────────── */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 122,
+          bottom: 34,
+          left: 0,
+          right: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          scrollbarWidth: 'none',
+        }}
+      >
+        {/* Ambient card */}
+        <div style={{ position: 'relative', width: '100%' }}>
+          <img
+            src={imgVaranda}
+            alt="Varanda Gourmet"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              pointerEvents: 'none',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              backgroundImage:
+                'linear-gradient(0deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 33%, rgba(0,0,0,0) 37%, rgba(0,0,0,0.6) 100%)',
+            }}
+          />
+          <div style={{ position: 'relative' }}>
+            <div
+              style={{
+                padding: '24px 12px 24px 24px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  height: 32,
+                }}
+              >
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 2,
+                    top: 29,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <svg width="8" height="14" viewBox="0 0 8 14" fill="none">
+                    <path
+                      d="M7 13L1 7L7 1"
+                      stroke="white"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                    />
+                  </svg>
+                </div>
+                <span
+                  style={{
+                    fontFamily: M,
+                    fontWeight: 600,
+                    fontSize: 26,
+                    color: 'white',
+                    flex: '1 0 0',
+                    lineHeight: 1,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Varanda Gourmet
+                </span>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <svg
+                    width="11"
+                    height="18"
+                    viewBox="0 0 11.0001 18"
+                    fill="none"
+                  >
+                    <path d={svgPaths.p9c99c00} fill="white" />
+                  </svg>
+                  <span
+                    style={{
+                      fontFamily: M,
+                      fontWeight: 600,
+                      fontSize: 24,
+                      color: 'white',
+                      lineHeight: 1,
+                    }}
+                  >
+                    27°
+                  </span>
+                </div>
+              </div>
+            </div>
+            <ActionMenu
+              anyLightOn={
+                centralDim > 0 ||
+                fitaBrightness > 0 ||
+                cctIntensity > 0 ||
+                bancadaOn
+              }
+            />
+          </div>
+        </div>
+
+        {/* ── Iluminação section ─────────────────────────────────────────────── */}
+        <div
+          style={{
+            padding: '31px 31px 12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 24,
+          }}
+        >
+          {/* Label */}
+          <div
+            style={{
+              position: 'relative',
+              height: 25,
+              width: '100%',
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              borderBottom: '1px solid #7D7D7D',
+            }}
+          >
+            <span
+              style={{
+                fontFamily: M,
+                fontWeight: 700,
+                fontSize: 10,
+                color: '#B7B7B7',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                lineHeight: 'normal',
+              }}
+            >
+              Luminárias
+            </span>
+          </div>
+
+          {/* Luminarias list */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 32,
+              width: '100%',
+            }}
+          >
+            {/* ── Central ──────────────────────────────────────────────────── */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <LumHeader name="Central" />
+              <Slider
+                value={centralDim}
+                onChange={onCentralDimChange}
+                thumbColor="#FFCC33"
+                tooltipFill="rgba(112,112,112,0.85)"
+              />
+            </div>
+
+            {/* ── Fita LED ─────────────────────────────────────────────────── */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <LumHeader
+                name="Fita LED"
+                extra={<GearIcon onClick={onOpenRgbAdvanced3} />}
+              />
+              <Slider
+                value={fitaBrightness}
+                onChange={onFitaBrightnessChange}
+                trackFill={
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: `${fitaBrightness}%`,
+                      background: pickedColor,
+                      borderRadius: 1.5,
+                    }}
+                  />
+                }
+                thumbColor={pickedColor}
+                thumbContent={
+                  <div
+                    style={{
+                      width: 13,
+                      height: 13,
+                      borderRadius: '50%',
+                      background: 'white',
+                    }}
+                  />
+                }
+                tooltipFill="rgba(112,112,112,0.85)"
+              />
+            </div>
+
+            {/* ── Bancada ON/OFF ────────────────────────────────────────────── */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <LumHeader name="Bancada" />
+              <button
+                onClick={() => onBancadaChange(!bancadaOn)}
+                style={{
+                  width: '100%',
+                  height: 23,
+                  background: 'none',
+                  border: 'none',
+                  padding: '5px 0',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+              >
+                <div
+                  style={{
+                    flex: '1 0 0',
+                    height: 13,
+                    borderRadius: 4,
+                    background: bancadaOn ? '#FFCC33' : 'transparent',
+                    border: `1px solid ${bancadaOn ? '#FFCC33' : 'white'}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'background 0.2s ease, border-color 0.2s ease',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontFamily: M,
+                      fontWeight: 600,
+                      fontSize: 10,
+                      color: bancadaOn ? 'black' : 'white',
+                      lineHeight: 1,
+                    }}
+                  >
+                    {bancadaOn ? 'ON' : 'OFF'}
+                  </span>
+                </div>
+              </button>
+            </div>
+
+            {/* ── LED CCT/Circadiano ────────────────────────────────────────── */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <LumHeader
+                name="LED CCT/Circadiano"
+                extra={
+                  <button
+                    onClick={onOpenCctCircle3}
+                    style={{
+                      background: circAuto ? '#FFCC33' : 'transparent',
+                      border: `1px solid ${circAuto ? '#FFCC33' : 'white'}`,
+                      height: 22,
+                      borderRadius: 4,
+                      padding: '0 7px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      minWidth: 50,
+                      cursor: 'pointer',
+                      transition: 'background 0.2s, border-color 0.2s',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily: M,
+                        fontWeight: 600,
+                        fontSize: 10,
+                        color: circAuto ? 'black' : 'white',
+                        textAlign: 'center',
+                      }}
+                    >
+                      CIRC.
+                    </span>
+                  </button>
+                }
+              />
+              <Slider
+                value={cctIntensity}
+                onChange={onCctIntensityChange}
+                trackFill={
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: `${cctIntensity}%`,
+                      background: cctColor,
+                      borderRadius: 1.5,
+                    }}
+                  />
+                }
+                thumbColor={cctColor}
+                thumbContent={
+                  <div
+                    style={{
+                      width: 13,
+                      height: 13,
+                      borderRadius: '50%',
+                      background: 'white',
+                    }}
+                  />
+                }
+                tooltipFill="rgba(112,112,112,0.85)"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Top bars ─────────────────────────────────────────────────────────── */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 20,
+          background: '#000',
+        }}
+      >
+        <StatusBar />
+        <NavBar onHomeClick={onGoHome} />
+      </div>
+
+      {/* ── Home indicator ────────────────────────────────────────────────────── */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: 34,
+          zIndex: 20,
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 8,
+            left: '33.33%',
+            right: '33.33%',
+            height: 5,
+            borderRadius: 2.5,
+            background: 'white',
+          }}
+        />
+      </div>
+    </div>
+  )
+}
+
 // ─── RGB Advanced Screen (Classic) ────────────────────────────────────────────
 
 function RGBAdvancedScreenClassic({
@@ -3545,6 +4100,348 @@ function RGBAdvancedScreenClassic({
             >
               OFF
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Top bars ─────────────────────────────────────────────────────────── */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 20,
+          background: '#000',
+        }}
+      >
+        {/* Status bar */}
+        <StatusBar />
+
+        {/* Title bar */}
+        <div
+          style={{
+            height: 56,
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <button
+            onClick={onBack}
+            style={{
+              position: 'absolute',
+              left: 12,
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 6,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <svg width="10" height="18" viewBox="0 0 10 18" fill="none">
+              <path
+                d="M9 17L1 9L9 1"
+                stroke="white"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+              />
+            </svg>
+          </button>
+          <span
+            style={{
+              fontFamily: M,
+              fontWeight: 600,
+              fontSize: 16,
+              color: '#A5A5A5',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+            }}
+          >
+            Fita LED
+          </span>
+        </div>
+      </div>
+
+      {/* ── Home indicator ────────────────────────────────────────────────────── */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: 34,
+          zIndex: 20,
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 8,
+            left: '33.33%',
+            right: '33.33%',
+            height: 5,
+            borderRadius: 2.5,
+            background: 'white',
+          }}
+        />
+      </div>
+    </div>
+  )
+}
+
+// ─── RGB Advanced Screen (Proposal #3 — no scene presets, adds color swatch) ──
+
+function RGBAdvancedScreen3({
+  onBack,
+  brightness,
+  onBrightnessChange,
+  wheelPos,
+  onWheelColorChange,
+  pickedColor,
+}: {
+  onBack: () => void
+  brightness: number
+  onBrightnessChange: (v: number) => void
+  wheelPos: { x: number; y: number }
+  onWheelColorChange: (
+    hue: number,
+    sat: number,
+    rawX: number,
+    rawY: number,
+  ) => void
+  pickedColor: string
+}) {
+  const wheelRef = useRef<HTMLDivElement>(null)
+
+  const moveSelector = (clientX: number, clientY: number) => {
+    if (!wheelRef.current) return
+    const rect = wheelRef.current.getBoundingClientRect()
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    let dx = clientX - cx
+    let dy = clientY - cy
+    const d = Math.sqrt(dx * dx + dy * dy)
+    if (d > 150) {
+      dx = (dx / d) * 150
+      dy = (dy / d) * 150
+    }
+    const sat = Math.min(Math.sqrt(dx * dx + dy * dy) / 150, 1)
+    const angleDeg = Math.atan2(dy, dx) * (180 / Math.PI)
+    const hue = (((angleDeg + 90) % 360) + 360) % 360
+    onWheelColorChange(hue, sat, dx, dy)
+  }
+
+  return (
+    <div
+      style={{
+        background: '#000',
+        width: '100%',
+        height: '100vh',
+        position: 'relative',
+        overflow: 'hidden',
+        fontFamily: M,
+        maxWidth: 393,
+        margin: '0 auto',
+      }}
+    >
+      {/* ── Scrollable content ───────────────────────────────────────────────── */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 106,
+          bottom: 34,
+          left: 0,
+          right: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          scrollbarWidth: 'none',
+        }}
+      >
+        <div
+          style={{
+            padding: '24px 31px 32px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 32,
+            alignItems: 'center',
+          }}
+        >
+          {/* Section label */}
+          <div
+            style={{
+              height: 25,
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              borderBottom: '1px solid #7D7D7D',
+              flexShrink: 0,
+            }}
+          >
+            <span
+              style={{
+                fontFamily: M,
+                fontWeight: 700,
+                fontSize: 10,
+                color: '#B7B7B7',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+              }}
+            >
+              Modo avançado
+            </span>
+          </div>
+
+          {/* ── Color wheel ────────────────────────────────────────────────────── */}
+          <div
+            ref={wheelRef}
+            style={{
+              position: 'relative',
+              width: 300,
+              height: 300,
+              borderRadius: '50%',
+              flexShrink: 0,
+              cursor: 'crosshair',
+              touchAction: 'none',
+              userSelect: 'none',
+            }}
+            onPointerDown={(e) => {
+              e.currentTarget.setPointerCapture(e.pointerId)
+              moveSelector(e.clientX, e.clientY)
+            }}
+            onPointerMove={(e) => {
+              if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+              moveSelector(e.clientX, e.clientY)
+            }}
+          >
+            {/* Hue image (rotated -90deg to match Figma) */}
+            <img
+              src={imgMatizes}
+              alt=""
+              draggable={false}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                borderRadius: '50%',
+                transform: 'rotate(-90deg)',
+                pointerEvents: 'none',
+              }}
+            />
+            {/* White radial gradient: center white → transparent at edge */}
+            <svg
+              style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+              width="300"
+              height="300"
+              viewBox="0 0 300 300"
+            >
+              <defs>
+                <radialGradient id="rgbWhiteGrad3" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stopColor="white" />
+                  <stop offset="100%" stopColor="white" stopOpacity="0" />
+                </radialGradient>
+              </defs>
+              <circle cx="150" cy="150" r="150" fill="url(#rgbWhiteGrad3)" />
+            </svg>
+
+            {/* Selector handle — color computed directly from wheel position for zero lag */}
+            {(() => {
+              const d = Math.sqrt(wheelPos.x ** 2 + wheelPos.y ** 2)
+              const sat = Math.min(d / 150, 1)
+              const hue =
+                ((Math.atan2(wheelPos.y, wheelPos.x) * 180) / Math.PI +
+                  90 +
+                  360) %
+                360
+              const selectorColor = hslToBlendedColor(hue, sat)
+              return (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 150 + wheelPos.x - 16,
+                    top: 150 + wheelPos.y - 16,
+                    width: 32,
+                    height: 32,
+                    borderRadius: '50%',
+                    background: selectorColor,
+                    border: '3px solid white',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.45)',
+                    pointerEvents: 'none',
+                  }}
+                />
+              )
+            })()}
+          </div>
+
+          {/* ── Color preview swatch ───────────────────────────────────────────── */}
+          <div
+            style={{
+              width: '100%',
+              height: 50,
+              borderRadius: 4,
+              background: pickedColor,
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <span
+              style={{
+                fontFamily: M,
+                fontWeight: 600,
+                fontSize: 16,
+                color: contrastTextColor(pickedColor),
+              }}
+            >
+              {rgbStringToHex(pickedColor)}
+            </span>
+          </div>
+
+          {/* ── Intensity slider ────────────────────────────────────────────────── */}
+          <div
+            style={{
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+            }}
+          >
+            <LumHeader name="Intensidade" />
+            <Slider
+              value={brightness}
+              onChange={onBrightnessChange}
+              trackFill={
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: `${brightness}%`,
+                    background: pickedColor,
+                    borderRadius: 1.5,
+                  }}
+                />
+              }
+              thumbColor={pickedColor}
+              thumbContent={
+                <div
+                  style={{
+                    width: 13,
+                    height: 13,
+                    borderRadius: '50%',
+                    background: 'white',
+                  }}
+                />
+              }
+              tooltipFill="rgba(112,112,112,0.85)"
+            />
           </div>
         </div>
       </div>
@@ -4440,6 +5337,546 @@ function CctAdvancedScreen({
                 }
               />
             )}
+          </div>
+
+          {/* Intensity slider */}
+          <div
+            style={{
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+            }}
+          >
+            <LumHeader name="Intensidade" />
+            <Slider
+              value={cctIntensity}
+              onChange={onCctIntensityChange}
+              trackFill={
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: `${cctIntensity}%`,
+                    background: color,
+                    borderRadius: 1.5,
+                  }}
+                />
+              }
+              thumbColor={color}
+              thumbContent={
+                <div
+                  style={{
+                    width: 13,
+                    height: 13,
+                    borderRadius: '50%',
+                    background: 'white',
+                  }}
+                />
+              }
+              tooltipFill="rgba(112,112,112,0.85)"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Top bar */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 20,
+          background: '#000',
+        }}
+      >
+        <StatusBar />
+        <div
+          style={{
+            height: 56,
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <button
+            onClick={onBack}
+            style={{
+              position: 'absolute',
+              left: 12,
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 6,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <svg width="10" height="18" viewBox="0 0 10 18" fill="none">
+              <path
+                d="M9 17L1 9L9 1"
+                stroke="white"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+              />
+            </svg>
+          </button>
+          <span
+            style={{
+              fontFamily: M,
+              fontWeight: 600,
+              fontSize: 16,
+              color: '#A5A5A5',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+            }}
+          >
+            LED CCT/Circadiano
+          </span>
+        </div>
+      </div>
+
+      {/* Home indicator */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: 34,
+          zIndex: 20,
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 8,
+            left: '33.33%',
+            right: '33.33%',
+            height: 5,
+            borderRadius: 2.5,
+            background: 'white',
+          }}
+        />
+      </div>
+
+      {/* Dialog */}
+      {showDialog && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            zIndex: 50,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0 40px',
+          }}
+          onClick={() => setShowDialog(false)}
+        >
+          <div
+            style={{
+              background: '#252525',
+              borderRadius: 9,
+              padding: '36px 24px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 28,
+              width: '100%',
+              maxWidth: 313,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span
+              style={{
+                fontFamily: M,
+                fontWeight: 600,
+                fontSize: 14,
+                color: 'white',
+                textAlign: 'center',
+                lineHeight: 1.5,
+                maxWidth: 247,
+              }}
+            >
+              Ao ativar a iluminação circadiana, defina a tonalidade mais quente
+              e a mais fria
+            </span>
+            <button
+              onClick={() => setShowDialog(false)}
+              style={{
+                height: 32,
+                width: 161,
+                borderRadius: 4,
+                background: 'transparent',
+                border: '1px solid white',
+                cursor: 'pointer',
+                fontFamily: M,
+                fontWeight: 600,
+                fontSize: 14,
+                color: 'white',
+              }}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Circadian Circle Screen (Proposal #3 — vertical-drag circle replaces the 270° arc) ──
+
+const CCT_CIRCLE_RADIUS = 150
+
+// Vertical position (offset from circle center) for a given 0-1 temp fraction.
+// t=1 (coolest) sits at the top (negative y); t=0 (warmest) sits at the bottom.
+function cctTToCircleY(t: number): number {
+  return CCT_CIRCLE_RADIUS - t * (2 * CCT_CIRCLE_RADIUS)
+}
+
+// Inverse of the above: clamps dy to the circle's vertical diameter, returns 0-1.
+function cctCircleDyToT(dy: number): number {
+  const clamped = clamp(dy, -CCT_CIRCLE_RADIUS, CCT_CIRCLE_RADIUS)
+  return 1 - (clamped + CCT_CIRCLE_RADIUS) / (2 * CCT_CIRCLE_RADIUS)
+}
+
+function CctCircleHandle({ y, fillColor }: { y: number; fillColor: string }) {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: CCT_CIRCLE_RADIUS - 18,
+        top: CCT_CIRCLE_RADIUS + y - 18,
+        width: 36,
+        height: 36,
+        pointerEvents: 'none',
+      }}
+    >
+      <svg
+        width="52"
+        height="52"
+        viewBox="0 0 52 52"
+        fill="none"
+        style={{ position: 'absolute', left: -8, top: -8 }}
+      >
+        <defs>
+          <filter
+            id="cct-circle-dropshadow"
+            x="-50%"
+            y="-50%"
+            width="200%"
+            height="200%"
+          >
+            <feDropShadow
+              dx="0"
+              dy="4"
+              stdDeviation="4"
+              floodColor="rgba(0,0,0,0.5)"
+            />
+          </filter>
+        </defs>
+        <circle
+          cx="26"
+          cy="26"
+          r="16.5"
+          stroke="white"
+          strokeWidth="3"
+          fill={fillColor}
+          filter="url(#cct-circle-dropshadow)"
+        />
+      </svg>
+    </div>
+  )
+}
+
+function CctCircleScreen3({
+  onBack,
+  circAuto,
+  onCircAutoChange,
+  cctTemp,
+  onCctTempChange,
+  cctTempMin,
+  onCctTempMinChange,
+  cctTempMax,
+  onCctTempMaxChange,
+  cctIntensity,
+  onCctIntensityChange,
+}: {
+  onBack: () => void
+  circAuto: boolean
+  onCircAutoChange: (v: boolean) => void
+  cctTemp: number
+  onCctTempChange: (v: number) => void
+  cctTempMin: number
+  onCctTempMinChange: (v: number) => void
+  cctTempMax: number
+  onCctTempMaxChange: (v: number) => void
+  cctIntensity: number
+  onCctIntensityChange: (v: number) => void
+}) {
+  const [showDialog, setShowDialog] = useState(false)
+  const color = cctToColor(cctTemp)
+  const singleT = cctTemp / 100
+  const minT = cctTempMin / 100
+  const maxT = cctTempMax / 100
+
+  const circleRef = useRef<HTMLDivElement>(null)
+  // Which handle the current drag gesture is moving — chosen by proximity on
+  // pointer-down since the whole circle (not just the handle) accepts taps
+  const draggingHandle = useRef<'single' | 'min' | 'max' | null>(null)
+
+  const applyDrag = (t: number) => {
+    if (draggingHandle.current === 'single') {
+      onCctTempChange(Math.round(snapCctTemp(t * 100)))
+    } else if (draggingHandle.current === 'min') {
+      onCctTempMinChange(
+        Math.round(snapCctTemp(Math.min(t, maxT - 0.01) * 100)),
+      )
+    } else if (draggingHandle.current === 'max') {
+      onCctTempMaxChange(
+        Math.round(snapCctTemp(Math.max(t, minT + 0.01) * 100)),
+      )
+    }
+  }
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!circleRef.current) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const rect = circleRef.current.getBoundingClientRect()
+    const dy = e.clientY - (rect.top + rect.height / 2)
+    if (circAuto) {
+      const minY = cctTToCircleY(minT)
+      const maxY = cctTToCircleY(maxT)
+      draggingHandle.current =
+        Math.abs(dy - minY) <= Math.abs(dy - maxY) ? 'min' : 'max'
+    } else {
+      draggingHandle.current = 'single'
+    }
+    applyDrag(cctCircleDyToT(dy))
+  }
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+    if (!circleRef.current || !draggingHandle.current) return
+    const rect = circleRef.current.getBoundingClientRect()
+    const dy = e.clientY - (rect.top + rect.height / 2)
+    applyDrag(cctCircleDyToT(dy))
+  }
+
+  const clearDrag = () => {
+    draggingHandle.current = null
+  }
+
+  return (
+    <div
+      style={{
+        background: '#000',
+        width: '100%',
+        height: '100vh',
+        position: 'relative',
+        overflow: 'hidden',
+        fontFamily: M,
+        maxWidth: 393,
+        margin: '0 auto',
+      }}
+    >
+      {/* Scrollable content */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 106,
+          bottom: 34,
+          left: 0,
+          right: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          scrollbarWidth: 'none',
+        }}
+      >
+        <div
+          style={{
+            padding: '24px 31px 32px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 32,
+            alignItems: 'center',
+          }}
+        >
+          {/* Section header */}
+          <div
+            style={{
+              height: 25,
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              borderBottom: '1px solid #7D7D7D',
+            }}
+          >
+            <span
+              style={{
+                fontFamily: M,
+                fontWeight: 700,
+                fontSize: 10,
+                color: '#B7B7B7',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+              }}
+            >
+              Modo circadiano
+            </span>
+            <button
+              onClick={() => setShowDialog(true)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                width: 24,
+                height: 24,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <circle cx="10" cy="10" r="9.5" stroke="#666666" />
+                <path
+                  d="M9.05216 11.566C9.05216 11.2393 9.1035 10.95 9.20616 10.698C9.31816 10.446 9.4535 10.222 9.61216 10.026C9.78016 9.83 9.9575 9.648 10.1442 9.48C10.3308 9.312 10.5035 9.15333 10.6622 9.004C10.8302 8.84533 10.9655 8.682 11.0682 8.514C11.1802 8.346 11.2362 8.15933 11.2362 7.954C11.2362 7.618 11.0962 7.34733 10.8162 7.142C10.5455 6.93667 10.1815 6.834 9.72416 6.834C9.2855 6.834 8.8935 6.92733 8.54816 7.114C8.20283 7.29133 7.91816 7.54333 7.69416 7.87L6.00016 6.876C6.3735 6.30667 6.8915 5.854 7.55416 5.518C8.21683 5.17267 9.0195 5 9.96216 5C10.6622 5 11.2782 5.10267 11.8102 5.308C12.3422 5.504 12.7575 5.79333 13.0562 6.176C13.3642 6.55867 13.5182 7.03 13.5182 7.59C13.5182 7.954 13.4622 8.276 13.3502 8.556C13.2382 8.836 13.0935 9.07867 12.9162 9.284C12.7388 9.48933 12.5475 9.68067 12.3422 9.858C12.1462 10.0353 11.9595 10.208 11.7822 10.376C11.6048 10.544 11.4555 10.7213 11.3342 10.908C11.2222 11.0947 11.1662 11.314 11.1662 11.566H9.05216ZM10.1162 15.08C9.72416 15.08 9.40216 14.954 9.15016 14.702C8.89816 14.45 8.77216 14.1513 8.77216 13.806C8.77216 13.4513 8.89816 13.1573 9.15016 12.924C9.40216 12.6813 9.72416 12.56 10.1162 12.56C10.5175 12.56 10.8395 12.6813 11.0822 12.924C11.3342 13.1573 11.46 13.4513 11.46 13.806C11.46 14.1513 11.3342 14.45 11.0822 14.702C10.8395 14.954 10.5175 15.08 10.1162 15.08Z"
+                  fill="#666666"
+                />
+              </svg>
+            </button>
+          </div>
+
+          {/* Checkbox row */}
+          <button
+            onClick={() => onCircAutoChange(!circAuto)}
+            style={{
+              width: '100%',
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 4,
+            }}
+          >
+            <span
+              style={{
+                fontFamily: M,
+                fontWeight: 600,
+                fontSize: 16,
+                color: 'white',
+              }}
+            >
+              Ativar iluminação circadiana
+            </span>
+            <div
+              style={{
+                width: 18,
+                height: 18,
+                borderRadius: 2,
+                border: '2px solid white',
+                background: circAuto ? 'white' : 'transparent',
+                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'background 0.15s ease',
+              }}
+            >
+              {circAuto && (
+                <svg width="12" height="10" viewBox="0 0 12 10" fill="none">
+                  <path
+                    d="M1 5.96789L3.85933 9.00001L11 1.00001"
+                    stroke="black"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                  />
+                </svg>
+              )}
+            </div>
+          </button>
+
+          {/* ── Circadian circle ─────────────────────────────────────────────── */}
+          <div
+            ref={circleRef}
+            style={{
+              position: 'relative',
+              width: CCT_CIRCLE_RADIUS * 2,
+              height: CCT_CIRCLE_RADIUS * 2,
+              borderRadius: '50%',
+              flexShrink: 0,
+              cursor: 'crosshair',
+              touchAction: 'none',
+              userSelect: 'none',
+              background: `linear-gradient(180deg, ${cctToColor(100)} 0%, white 50%, ${cctToColor(0)} 100%)`,
+            }}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={clearDrag}
+            onPointerCancel={clearDrag}
+          >
+            {circAuto ? (
+              <>
+                <CctCircleHandle
+                  y={cctTToCircleY(minT)}
+                  fillColor={cctToColor(cctTempMin)}
+                />
+                <CctCircleHandle
+                  y={cctTToCircleY(maxT)}
+                  fillColor={cctToColor(cctTempMax)}
+                />
+              </>
+            ) : (
+              <CctCircleHandle
+                y={cctTToCircleY(singleT)}
+                fillColor={cctToColor(cctTemp)}
+              />
+            )}
+          </div>
+
+          {/* Temperature label — tracks the handle's color in manual mode, gradient with both bounds in auto mode */}
+          <div
+            style={{
+              width: '100%',
+              height: 50,
+              borderRadius: 4,
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: circAuto
+                ? `linear-gradient(90deg, ${cctToColor(cctTempMin)} 10%, ${cctToColor((cctTempMin + cctTempMax) / 2)} 50%, ${cctToColor(cctTempMax)} 90%)`
+                : color,
+              transition: circAuto ? undefined : 'background 0.1s linear',
+            }}
+          >
+            <span
+              style={{
+                fontFamily: M,
+                fontWeight: 600,
+                fontSize: 16,
+                color: 'black',
+              }}
+            >
+              {circAuto
+                ? `${kValueLabel(minT)} - ${kValueLabel(maxT)}`
+                : kValueLabel(singleT)}
+            </span>
           </div>
 
           {/* Intensity slider */}
