@@ -111,6 +111,52 @@ function contrastTextColor(rgbStr: string): string {
   return brightness > 150 ? 'black' : 'white'
 }
 
+// Parses "#RRGGBB" (with or without "#", case-insensitive) into 0-255
+// channels; null unless the string is a complete 6-digit hex color — no
+// 3-digit shorthand, so a live-typed value only applies once all 6 land
+function hexToRgb(hex: string): [number, number, number] | null {
+  const clean = hex.trim().replace(/^#/, '')
+  if (!/^[0-9a-fA-F]{6}$/.test(clean)) return null
+  return [
+    parseInt(clean.slice(0, 2), 16),
+    parseInt(clean.slice(2, 4), 16),
+    parseInt(clean.slice(4, 6), 16),
+  ]
+}
+
+// Standard RGB -> HSV (hue in degrees 0-360, sat/val 0-1). `val` is the
+// brightness component this app's hue/sat color model otherwise assumes is
+// always 100% (see hslToBlendedColor) — used to also drive an intensity slider.
+function rgbToHsv(
+  r: number,
+  g: number,
+  b: number,
+): { hue: number; sat: number; val: number } {
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const val = max / 255
+  const sat = max === 0 ? 0 : (max - min) / max
+  let hue = 0
+  if (max !== min) {
+    const d = max - min
+    if (max === r) hue = ((g - b) / d) % 6
+    else if (max === g) hue = (b - r) / d + 2
+    else hue = (r - g) / d + 4
+    hue *= 60
+    if (hue < 0) hue += 360
+  }
+  return { hue, sat, val }
+}
+
+// Scales each channel of an "rgb(r,g,b)" string by a 0-1 factor — equivalent
+// to recomputing the color at a given HSV value/brightness, since scaling V
+// in HSV is just a per-channel multiply
+function scaleRgbString(rgbStr: string, factor: number): string {
+  const [r, g, b] = rgbStr.match(/\d+/g)!.map(Number)
+  const f = clamp(factor, 0, 1)
+  return `rgb(${Math.round(r * f)},${Math.round(g * f)},${Math.round(b * f)})`
+}
+
 // Map 0-100 CCT temp to warm (#FF8800) → white (#FFFFFF) → cool (#88BBFF)
 function cctToRgb(temp: number): [number, number, number] {
   if (temp <= 50) {
@@ -3612,9 +3658,21 @@ function MainScreenThird({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <LumHeader name="Central" />
               <Slider
+                trackH={11}
+                thumbW={15}
+                thumbH={15}
                 value={centralDim}
                 onChange={onCentralDimChange}
-                thumbColor="#FFCC33"
+                thumbContent={
+                  <div
+                    style={{
+                      width: 15,
+                      height: 15,
+                      borderRadius: '50%',
+                      background: '#FFCC33',
+                    }}
+                  />
+                }
                 tooltipFill="rgba(112,112,112,0.85)"
               />
             </div>
@@ -3626,6 +3684,9 @@ function MainScreenThird({
                 extra={<GearIcon onClick={onOpenRgbAdvanced3} />}
               />
               <Slider
+                trackH={11}
+                thumbW={15}
+                thumbH={15}
                 value={fitaBrightness}
                 onChange={onFitaBrightnessChange}
                 trackFill={
@@ -3645,8 +3706,8 @@ function MainScreenThird({
                 thumbContent={
                   <div
                     style={{
-                      width: 13,
-                      height: 13,
+                      width: 15,
+                      height: 15,
                       borderRadius: '50%',
                       background: 'white',
                     }}
@@ -3737,6 +3798,9 @@ function MainScreenThird({
                 }
               />
               <Slider
+                trackH={11}
+                thumbW={15}
+                thumbH={15}
                 value={cctIntensity}
                 onChange={onCctIntensityChange}
                 trackFill={
@@ -3756,8 +3820,8 @@ function MainScreenThird({
                 thumbContent={
                   <div
                     style={{
-                      width: 13,
-                      height: 13,
+                      width: 15,
+                      height: 15,
                       borderRadius: '50%',
                       background: 'white',
                     }}
@@ -4228,6 +4292,34 @@ function RGBAdvancedScreen3({
   const wheelRef = useRef<HTMLDivElement>(null)
   // Dim the wheel to 50% when the strip is fully off, same as proposal #2
   const wheelOpacity = brightness === 0 ? 0.5 : 1
+  // The label shows the color as it's actually output — hue/sat blended with
+  // Intensidade's brightness — not the wheel's always-100%-value pickedColor
+  const displayedColor = scaleRgbString(pickedColor, brightness / 100)
+
+  // Editable hex field — mirrors displayedColor except while the user is mid-edit
+  const [hexInput, setHexInput] = useState(() => rgbStringToHex(displayedColor))
+  useEffect(() => {
+    setHexInput(rgbStringToHex(displayedColor))
+  }, [displayedColor])
+
+  // Applies a typed hex live once it's valid: moves the wheel selector (hue/sat)
+  // and sets Intensidade from the hex's brightness (the wheel itself has no
+  // value/brightness axis — hslToBlendedColor always assumes 100%).
+  const applyHexInput = (raw: string) => {
+    const rgb = hexToRgb(raw)
+    if (!rgb) return false
+    const { hue, sat, val } = rgbToHsv(...rgb)
+    const angleRad = ((hue - 90) * Math.PI) / 180
+    const radius = sat * 150
+    onWheelColorChange(
+      hue,
+      sat,
+      Math.cos(angleRad) * radius,
+      Math.sin(angleRad) * radius,
+    )
+    onBrightnessChange(Math.round(val * 100))
+    return true
+  }
 
   const moveSelector = (clientX: number, clientY: number) => {
     if (!wheelRef.current) return
@@ -4397,25 +4489,45 @@ function RGBAdvancedScreen3({
               width: '100%',
               height: 50,
               borderRadius: 4,
-              background: pickedColor,
+              background: displayedColor,
               flexShrink: 0,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               opacity: wheelOpacity,
-              transition: 'opacity 0.2s ease',
+              transition: 'opacity 0.2s ease, background 0.1s linear',
             }}
           >
-            <span
+            <input
+              type="text"
+              value={hexInput}
+              onChange={(e) => {
+                setHexInput(e.target.value)
+                applyHexInput(e.target.value)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur()
+              }}
+              onBlur={() => {
+                if (!hexToRgb(hexInput)) setHexInput(rgbStringToHex(displayedColor))
+              }}
+              maxLength={7}
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
               style={{
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                textAlign: 'center',
+                width: '100%',
                 fontFamily: M,
                 fontWeight: 600,
                 fontSize: 16,
-                color: contrastTextColor(pickedColor),
+                color: contrastTextColor(displayedColor),
+                cursor: 'text',
               }}
-            >
-              {rgbStringToHex(pickedColor)}
-            </span>
+            />
           </div>
 
           {/* ── Intensity slider ────────────────────────────────────────────────── */}
@@ -4429,6 +4541,9 @@ function RGBAdvancedScreen3({
           >
             <LumHeader name="Intensidade" />
             <Slider
+              trackH={11}
+              thumbW={15}
+              thumbH={15}
               value={brightness}
               onChange={onBrightnessChange}
               trackFill={
@@ -4448,8 +4563,8 @@ function RGBAdvancedScreen3({
               thumbContent={
                 <div
                   style={{
-                    width: 13,
-                    height: 13,
+                    width: 15,
+                    height: 15,
                     borderRadius: '50%',
                     background: 'white',
                   }}
@@ -5968,6 +6083,9 @@ function CctCircleScreen3({
           >
             <LumHeader name="Intensidade" />
             <Slider
+              trackH={11}
+              thumbW={15}
+              thumbH={15}
               value={cctIntensity}
               onChange={onCctIntensityChange}
               trackFill={
@@ -5987,8 +6105,8 @@ function CctCircleScreen3({
               thumbContent={
                 <div
                   style={{
-                    width: 13,
-                    height: 13,
+                    width: 15,
+                    height: 15,
                     borderRadius: '50%',
                     background: 'white',
                   }}

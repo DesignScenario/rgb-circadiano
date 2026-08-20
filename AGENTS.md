@@ -45,8 +45,15 @@ a value in one proposal is reflected in the others:
   two dedicated screens, both dimming to 50% opacity when their strip's
   intensity is 0:
   - `rgb-advanced-3` (`RGBAdvancedScreen3`) — the same color wheel, no preset
-    buttons, plus a swatch showing the picked color's hex code
-    (`rgbStringToHex`, with contrast-aware text via `contrastTextColor`).
+    buttons, plus an **editable hex field** in place of a static swatch:
+    typing a complete 6-digit hex (`hexToRgb` → `rgbToHsv`) moves the wheel
+    selector and sets Intensidade from the hex's brightness; conversely, the
+    field's background/text (`scaleRgbString` + `contrastTextColor`) always
+    shows the color as actually *displayed* — hue/sat blended with the
+    current Intensidade — not the wheel's always-100%-value `pickedColor`.
+    Sliders on this screen and in `MainScreenThird`/`CctCircleScreen3` are
+    also visibly thicker (`trackH={11}`, `thumbW/H={15}`) than this app's
+    3px/13px default — a proposal #3–only style choice, not a bug to "fix".
   - `cct-circle-3` (`CctCircleScreen3`) — a circadian **circle** instead of an
     arc: a linear vertical gradient (warm↔cool), one or two 32px
     `CctCircleHandle`s draggable anywhere inside the circle along its
@@ -118,9 +125,12 @@ No Tailwind config file or PostCSS config is needed with the v4 plugin.
   re-deriving colors: `hueToColor` / `hueToRgb` (rainbow slider), `sliderToHslHue`
   / `hslHueToSlider` / `hslToBlendedColor` (RGB wheel ↔ slider), and `cctToColor`
   / `cctToRgb` (warm→white→cool temperature). `rgbStringToHex` converts an
-  `rgb(r,g,b)` string to `#RRGGBB`; `contrastTextColor` picks black or white
-  text for legibility against any of these colors. `clamp(v, lo, hi)` is the
-  shared clamp.
+  `rgb(r,g,b)` string to `#RRGGBB`; `hexToRgb` / `rgbToHsv` do the reverse
+  (parse a typed hex into RGB, then standard HSV — `hue`/`sat` feed the wheel,
+  `val` feeds an intensity slider); `scaleRgbString` scales an `rgb(...)`
+  string's channels by a 0-1 factor (e.g. to blend in a separate intensity
+  value). `contrastTextColor` picks black or white text for legibility
+  against any of these colors. `clamp(v, lo, hi)` is the shared clamp.
 - `Slider` is the reusable slider primitive; prefer configuring it (via
   `trackFill`, `thumbContent`, `tooltipFill`, `tooltipContent`, `thumbW/H`) over
   writing a new slider. `DropBalloon` is its teardrop tooltip.
