@@ -885,15 +885,24 @@ function CircadianStepArrow({
 
 // ─── Circadian automatic-mode ring icon (travels the arc over the 10s sweep) ──
 
-function CctAutoRingIcon({ color }: { color: string }) {
+function CctAutoRingIcon({
+  color,
+  size = 36,
+}: {
+  color: string
+  size?: number
+}) {
+  const iconW = (size * 32) / 36
+  const iconH = (size * 17.8) / 36
+  const border = 3
   return (
     <div
       style={{
-        width: 36,
-        height: 36,
+        width: size,
+        height: size,
         borderRadius: '50%',
         background: '#000',
-        border: `3px solid ${color}`,
+        border: `${border}px solid ${color}`,
         boxShadow: '0 4px 8px rgba(0,0,0,0.5)',
         display: 'flex',
         alignItems: 'center',
@@ -902,7 +911,7 @@ function CctAutoRingIcon({ color }: { color: string }) {
       }}
     >
       {/* Same wave/parábola vector as CCTThumb's collapsed-mode icon */}
-      <svg width="32" height="17.8" viewBox="0 0 45 25" fill="none">
+      <svg width={iconW} height={iconH} viewBox="0 0 45 25" fill="none">
         <path d={WAVE_PATH} fill="url(#cct-wave-grad-ring)" stroke="black" />
         <defs>
           <linearGradient
@@ -5554,17 +5563,17 @@ function CctCircleHandle({ y, fillColor }: { y: number; fillColor: string }) {
     <div
       style={{
         position: 'absolute',
-        left: CCT_CIRCLE_RADIUS - 18,
-        top: CCT_CIRCLE_RADIUS + y - 18,
-        width: 36,
-        height: 36,
+        left: CCT_CIRCLE_RADIUS - 16,
+        top: CCT_CIRCLE_RADIUS + y - 16,
+        width: 32,
+        height: 32,
         pointerEvents: 'none',
       }}
     >
       <svg
-        width="52"
-        height="52"
-        viewBox="0 0 52 52"
+        width="48"
+        height="48"
+        viewBox="0 0 48 48"
         fill="none"
         style={{ position: 'absolute', left: -8, top: -8 }}
       >
@@ -5585,9 +5594,9 @@ function CctCircleHandle({ y, fillColor }: { y: number; fillColor: string }) {
           </filter>
         </defs>
         <circle
-          cx="26"
-          cy="26"
-          r="16.5"
+          cx="24"
+          cy="24"
+          r="14.5"
           stroke="white"
           strokeWidth="3"
           fill={fillColor}
@@ -5628,6 +5637,12 @@ function CctCircleScreen3({
   const singleT = cctTemp / 100
   const minT = cctTempMin / 100
   const maxT = cctTempMax / 100
+  // Where the live-animating cctTemp currently sits between min and max (0-1),
+  // used to slide the circadian icon across the label as it sweeps
+  const cctFraction =
+    cctTempMax > cctTempMin
+      ? clamp((cctTemp - cctTempMin) / (cctTempMax - cctTempMin), 0, 1)
+      : 0.5
 
   const circleRef = useRef<HTMLDivElement>(null)
   // Which handle the current drag gesture is moving — chosen by proximity on
@@ -5849,34 +5864,85 @@ function CctCircleScreen3({
             )}
           </div>
 
-          {/* Temperature label — tracks the handle's color in manual mode, gradient with both bounds in auto mode */}
+          {/* Temperature label — value/icon box + min/max range row below it */}
           <div
             style={{
               width: '100%',
-              height: 50,
-              borderRadius: 4,
-              flexShrink: 0,
               display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: circAuto
-                ? `linear-gradient(90deg, ${cctToColor(cctTempMin)} 10%, ${cctToColor((cctTempMin + cctTempMax) / 2)} 50%, ${cctToColor(cctTempMax)} 90%)`
-                : color,
-              transition: circAuto ? undefined : 'background 0.1s linear',
+              flexDirection: 'column',
+              gap: 4,
+              flexShrink: 0,
             }}
           >
-            <span
+            <div
               style={{
-                fontFamily: M,
-                fontWeight: 600,
-                fontSize: 16,
-                color: 'black',
+                position: 'relative',
+                width: '100%',
+                height: 50,
+                borderRadius: 4,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: circAuto
+                  ? `linear-gradient(90deg, ${cctToColor(cctTempMin)} 10%, ${cctToColor((cctTempMin + cctTempMax) / 2)} 50%, ${cctToColor(cctTempMax)} 90%)`
+                  : color,
+                transition: circAuto ? undefined : 'background 0.1s linear',
               }}
             >
-              {circAuto
-                ? `${kValueLabel(minT)} - ${kValueLabel(maxT)}`
-                : kValueLabel(singleT)}
-            </span>
+              {circAuto ? (
+                <div
+                  style={{
+                    position: 'absolute',
+                    // End stop: keeps the icon's own edge (16px radius) 9px
+                    // clear of the label's border at either end of travel
+                    left: `calc(25px + ${cctFraction} * (100% - 50px))`,
+                    top: '50%',
+                    transform: 'translate(-50%, -50%)',
+                  }}
+                >
+                  <CctAutoRingIcon color={color} size={32} />
+                </div>
+              ) : (
+                <span
+                  style={{
+                    fontFamily: M,
+                    fontWeight: 600,
+                    fontSize: 16,
+                    color: 'black',
+                  }}
+                >
+                  {kValueLabel(singleT)}
+                </span>
+              )}
+            </div>
+            <div
+              style={{
+                width: '100%',
+                display: 'flex',
+                justifyContent: 'space-between',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: M,
+                  fontWeight: 600,
+                  fontSize: 16,
+                  color: 'white',
+                }}
+              >
+                {circAuto ? kValueLabel(minT) : `${CCT_MIN_K}K`}
+              </span>
+              <span
+                style={{
+                  fontFamily: M,
+                  fontWeight: 600,
+                  fontSize: 16,
+                  color: 'white',
+                }}
+              >
+                {circAuto ? kValueLabel(maxT) : `${CCT_MAX_K}K`}
+              </span>
+            </div>
           </div>
 
           {/* Intensity slider */}
