@@ -12,9 +12,14 @@ cameras) appear as nav icons only.
 
 The whole app lives in `src/App.tsx` as a small screen state machine. A
 `HomeScreen` landing page offers **three UX proposals** for the same lighting
-panel — all driven by the same shared state in `App()` (brightness, hue,
-saturation, CCT temp/min/max, circadian on/off, Bancada on/off), so adjusting
-a value in one proposal is reflected in the others:
+panel — all driven by the same shared state in `App()` (brightness, CCT
+temp/min/max, circadian on/off, Bancada on/off), so adjusting a value in one
+proposal is reflected in the others. The one exception is Fita LED
+hue/saturation: proposal #3 keeps its own independent color state
+(`p3Hue`/`p3Sat`, see below) instead of the `fitaHue`/`fitaSat` shared by
+proposals #1/#2, so setting a color in proposal #3 does *not* show up in
+#1/#2 (or vice versa) — everything else about that luminaire (brightness)
+still syncs normally:
 
 - **Proposal #1** (`main-classic`, `MainScreenClassic`) — one full screen per
   luminaire. Lists **Central** (dimmer), **Fita LED** and **Fita LED 2**
@@ -51,6 +56,11 @@ a value in one proposal is reflected in the others:
     field's background/text (`scaleRgbString` + `contrastTextColor`) always
     shows the color as actually *displayed* — hue/sat blended with the
     current Intensidade — not the wheel's always-100%-value `pickedColor`.
+    Unlike every other wheel/ring in the app, this one is **exact continuous
+    HSV** (`hsvToRgb`/`hsvToRgbString`, backed by the independent `p3Hue`
+    0-360°/`p3Sat` state) instead of the coarse ~92-step slider-position
+    system — so a typed hex always round-trips to the identical hex, with no
+    snapping to the nearest color the old lookup table could produce.
     Sliders on this screen and in `MainScreenThird`/`CctCircleScreen3` are
     also visibly thicker (`trackH={11}`, `thumbW/H={15}`) than this app's
     3px/13px default — a proposal #3–only style choice, not a bug to "fix".
@@ -122,15 +132,24 @@ No Tailwind config file or PostCSS config is needed with the v4 plugin.
 - `const M = 'Montserrat, sans-serif'` is the shared font-family constant. Use
   `fontFamily: M` on text rather than repeating the string.
 - Color math lives in the helpers at the top of the file — reuse them rather than
-  re-deriving colors: `hueToColor` / `hueToRgb` (rainbow slider), `sliderToHslHue`
-  / `hslHueToSlider` / `hslToBlendedColor` (RGB wheel ↔ slider), and `cctToColor`
-  / `cctToRgb` (warm→white→cool temperature). `rgbStringToHex` converts an
-  `rgb(r,g,b)` string to `#RRGGBB`; `hexToRgb` / `rgbToHsv` do the reverse
-  (parse a typed hex into RGB, then standard HSV — `hue`/`sat` feed the wheel,
-  `val` feeds an intensity slider); `scaleRgbString` scales an `rgb(...)`
-  string's channels by a 0-1 factor (e.g. to blend in a separate intensity
-  value). `contrastTextColor` picks black or white text for legibility
-  against any of these colors. `clamp(v, lo, hi)` is the shared clamp.
+  re-deriving colors. Two parallel hue/sat systems coexist, deliberately:
+  - The **coarse system**, used everywhere in proposals #1/#2: `hueToColor` /
+    `hueToRgb` (rainbow slider, a hand-authored ~92-step color-stop table) and
+    `sliderToHslHue` / `hslHueToSlider` / `hslToBlendedColor` (convert between
+    that table's slider-position space and hue degrees). It only
+    approximates true HSV — don't expect an arbitrary hex to round-trip
+    through it exactly.
+  - The **exact system**, used only by proposal #3's RGB wheel: `hsvToRgb` /
+    `hsvToRgbString` — standard, continuous HSV→RGB, no lookup table.
+  - `cctToColor` / `cctToRgb` (warm→white→cool temperature) is separate from
+    both, used for CCT/circadian everywhere.
+  - `rgbStringToHex` converts an `rgb(r,g,b)` string to `#RRGGBB`; `hexToRgb`
+    / `rgbToHsv` do the reverse (parse a typed hex into RGB, then standard
+    HSV — `hue`/`sat` feed a wheel, `val` feeds an intensity slider);
+    `scaleRgbString` scales an `rgb(...)` string's channels by a 0-1 factor
+    (e.g. to blend in a separate intensity value). `contrastTextColor` picks
+    black or white text for legibility against any of these colors.
+    `clamp(v, lo, hi)` is the shared clamp.
 - `Slider` is the reusable slider primitive; prefer configuring it (via
   `trackFill`, `thumbContent`, `tooltipFill`, `tooltipContent`, `thumbW/H`) over
   writing a new slider. `DropBalloon` is its teardrop tooltip.
